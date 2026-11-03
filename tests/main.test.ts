@@ -89,6 +89,35 @@ it('starts a new game directly from the menu', async () => {
   expect(document.querySelector('#pairs')!.textContent).not.toBe('0');
 });
 
+it('updates only the affected tiles when selecting, switching and deselecting', async () => {
+  const game = newGame(42);
+  await start(game);
+  const [a, b] = availablePairs(game)[0];
+  const board = document.querySelector('#board')!;
+  const observer = new MutationObserver(() => {});
+  observer.observe(board, { subtree: true, attributes: true, childList: true });
+  const activate = (id: number) => board.querySelector(`[data-tile="${id}"]`)!
+    .dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+  activate(a);
+  expect(observer.takeRecords().length).toBeLessThanOrEqual(2);
+  expect(board.querySelector('.selected')!.getAttribute('data-tile')).toBe(String(a));
+  activate(a);
+  expect(observer.takeRecords().length).toBeLessThanOrEqual(2);
+  expect(board.querySelector('.selected')).toBeNull();
+  activate(a);
+  observer.takeRecords();
+  // Choosing a different face switches selection without changing the position.
+  const other = [...board.querySelectorAll<SVGSVGElement>('.free')]
+    .find(tile => game.faces[Number(tile.dataset.tile)] !== game.faces[a])!;
+  activate(Number(other.dataset.tile));
+  expect(observer.takeRecords().length).toBeLessThanOrEqual(4);
+  expect(other.classList.contains('selected')).toBe(true);
+  activate(a); activate(b);
+  expect(board.querySelector(`[data-tile="${a}"]`)).toBeNull();
+  expect(board.querySelector(`[data-tile="${b}"]`)).toBeNull();
+  observer.disconnect();
+});
+
 it('toggles mobile controls and dismisses them when returning to the board', async () => {
   await start(newGame(42));
   const toggle = document.querySelector<HTMLButtonElement>('#toggle-controls')!;

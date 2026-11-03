@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Board } from '../src/board';
-import { newGame } from '../src/game';
+import { availablePairs, newGame, removePair, undo } from '../src/game';
 import { tileColumn } from '../src/art';
 
 let host: HTMLElement, board: Board;
@@ -73,6 +73,23 @@ describe('Board pointer input', () => {
 });
 
 describe('GNOME tile atlas', () => {
+  it('clears hints with a targeted selection update and restores stacking order after undo', () => {
+    const game = newGame(42);
+    const pair = availablePairs(game)[0];
+    const order = [...host.querySelectorAll<SVGSVGElement>('.tile')].map(tile => tile.dataset.tile);
+    board.render(game, null, pair, true);
+    expect(host.querySelectorAll('.hinted')).toHaveLength(2);
+    board.updateSelection(pair[0], null);
+    expect(host.querySelectorAll('.hinted')).toHaveLength(0);
+    expect(host.querySelector('.selected')!.getAttribute('aria-pressed')).toBe('true');
+    removePair(game, ...pair);
+    board.render(game, null, null, true);
+    undo(game);
+    board.render(game, null, null, true);
+    expect([...host.querySelectorAll<SVGSVGElement>('.tile')].map(tile => tile.dataset.tile)).toEqual(order);
+    expect(host.querySelectorAll('.selected')).toHaveLength(0);
+    expect(host.querySelectorAll('.tile[aria-pressed="true"]')).toHaveLength(0);
+  });
   it('renders normal and original blue selected sprites with unchanged proportions', () => {
     const game = newGame(42);
     const id = Number(host.querySelector('.tile.free')!.getAttribute('data-tile'));

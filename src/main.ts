@@ -179,7 +179,7 @@ function selectTile(id: number) {
   if (paused || busy || dialog.open || complete()) return;
   if (!isFree(id, removedTiles(game))) { status('Эта костяшка закрыта. Сверху должно быть пусто, а слева или справа — свободно.'); return; }
   updateClock(); started = true;
-  if (selected === id) { selected = null; hint = null; render(); return; }
+  if (selected === id) { selected = null; hint = null; board.updateSelection(selected, hint); return; }
   if (selected !== null && removePair(game, selected, id)) {
     selected = null; hint = null; hintIndex = 0;
     status(complete() ? 'Все 144 костяшки убраны. Поздравляем!' : 'Пара найдена.');
@@ -188,7 +188,7 @@ function selectTile(id: number) {
   }
   if (selected !== null) status('Это разные костяшки. Найдите пару к выбранной.');
   else status('Теперь выберите такую же свободную костяшку.');
-  selected = id; hint = null; render();
+  selected = id; hint = null; board.updateSelection(selected, hint);
 }
 function showDialog(title: string, content: string) {
   setControlsOpen(false);

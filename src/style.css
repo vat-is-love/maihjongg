@@ -26,6 +26,7 @@ body.game-expanded{overflow:hidden}
 @media(max-width:760px){.game-shell.is-expanded .game-topbar{padding-top:14px}}
 
 /* Both sprite states stay loaded; selecting a tile only changes visibility. */
+.board,.board *{-webkit-tap-highlight-color:transparent}
 .tile-sprite-highlight{opacity:0}
 .tile.selected .tile-sprite-normal,.tile.hinted .tile-sprite-normal{opacity:0}
 .tile.selected .tile-sprite-highlight,.tile.hinted .tile-sprite-highlight{opacity:1}

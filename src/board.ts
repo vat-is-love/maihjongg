@@ -3,9 +3,17 @@ import { SLOTS, isFree, removedTiles, type Game, type Pair } from './game';
 import { FACE_NAMES, TILE_HEIGHT, TILE_LAYER_X, TILE_LAYER_Y, TILE_PITCH_X, TILE_PITCH_Y, TILE_WIDTH, tileSprite } from './art';
 
 const WIDTH = 896, HEIGHT = 704;
+const DRAW_ORDER = [...SLOTS].sort((a, b) => a.z - b.z || (a.y - a.x) - (b.y - b.x) || a.x - b.x);
+const DRAW_RANK = new Map(DRAW_ORDER.map((slot, rank) => [slot.id, rank]));
+function setAttribute(element: Element, name: string, value: string) {
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
+}
 export class Board {
   private svg: SVGSVGElement;
   private tiles: SVGGElement;
+  private tileElements = new Map<number, SVGSVGElement>();
+  private selected: number | null = null;
+  private hint: Pair | null = null;
   private pointers = new Map<number, { x: number; y: number }>();
   private loadingImages = new Set<SVGImageElement>();
   private moved = false;
@@ -33,12 +41,15 @@ export class Board {
 
   render(game: Game, selected: number | null, hint: Pair | null, highlight: boolean): void {
     const removed = removedTiles(game);
-    const variants = game.faces.map((face, id) => game.faces.slice(0, id).filter(f => f === face).length);
-    const existing = new Map([...this.tiles.querySelectorAll<SVGSVGElement>('[data-tile]')]
-      .map(tile => [Number(tile.dataset.tile), tile]));
-    for (const s of [...SLOTS].sort((a, b) => a.z - b.z || (a.y - a.x) - (b.y - b.x) || a.x - b.x)) {
-      let tile = existing.get(s.id);
-      if (removed.has(s.id)) { tile?.remove(); continue; }
+    const counts = new Map<number, number>();
+    const variants = game.faces.map(face => {
+      const variant = counts.get(face) ?? 0;
+      counts.set(face, variant + 1);
+      return variant;
+    });
+    for (const s of DRAW_ORDER) {
+      let tile = this.tileElements.get(s.id);
+      if (removed.has(s.id)) { tile?.remove(); this.tileElements.delete(s.id); continue; }
       const free = isFree(s.id, removed);
       if (!tile) {
         tile = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -51,12 +62,10 @@ export class Board {
         tile.setAttribute('overflow', 'hidden');
         tile.setAttribute('role', 'button');
         // Restore removed tiles in the same stacking order when undoing.
-        const next = [...this.tiles.children].find(other => {
-          const slot = SLOTS[Number((other as SVGSVGElement).dataset.tile)];
-          return slot.z > s.z || (slot.z === s.z && ((slot.y - slot.x) > (s.y - s.x) ||
-            (slot.y - slot.x === s.y - s.x && slot.x > s.x)));
-        });
+        const next = [...this.tiles.children].find(other =>
+          DRAW_RANK.get(Number((other as SVGSVGElement).dataset.tile))! > DRAW_RANK.get(s.id)!);
         this.tiles.insertBefore(tile, next ?? null);
+        this.tileElements.set(s.id, tile);
       }
       const spriteKey = `${game.faces[s.id]}:${variants[s.id]}`;
       if (tile.dataset.sprite !== spriteKey) {
@@ -72,21 +81,40 @@ export class Board {
         }
         tile.dataset.sprite = spriteKey;
       }
-      tile.setAttribute('class', ['tile', free ? 'free' : 'blocked', selected === s.id ? 'selected' : '',
-        hint?.includes(s.id) ? 'hinted' : '', highlight && !free ? 'dimmed' : ''].join(' '));
-      tile.setAttribute('tabindex', free ? '0' : '-1');
-      tile.setAttribute('aria-disabled', String(!free));
-      tile.setAttribute('aria-pressed', String(selected === s.id));
-      tile.setAttribute('aria-label', `${FACE_NAMES[game.faces[s.id]]}${free ? ', свободна' : ', закрыта'}`);
+      setAttribute(tile, 'class', ['tile', free ? 'free' : 'blocked', selected === s.id ? 'selected' : '',
+        hint?.includes(s.id) ? 'hinted' : '', highlight && !free ? 'dimmed' : ''].filter(Boolean).join(' '));
+      setAttribute(tile, 'tabindex', free ? '0' : '-1');
+      setAttribute(tile, 'aria-disabled', String(!free));
+      setAttribute(tile, 'aria-pressed', String(selected === s.id));
+      setAttribute(tile, 'aria-label', `${FACE_NAMES[game.faces[s.id]]}${free ? ', свободна' : ', закрыта'}`);
     }
+    this.selected = selected;
+    this.hint = hint ? [...hint] : null;
     for (const image of this.loadingImages) if (!this.svg.contains(image)) this.loadingImages.delete(image);
     this.updateReadiness();
   }
 
+  // Selection does not change geometry, free tiles or the toolbar. Touch only
+  // the previous/new selection and hints, keeping the rest of the SVG untouched.
+  updateSelection(selected: number | null, hint: Pair | null): void {
+    const affected = new Set([this.selected, selected, ...(this.hint ?? []), ...(hint ?? [])]);
+    for (const id of affected) {
+      if (id === null) continue;
+      const tile = this.tileElements.get(id);
+      if (!tile) continue;
+      if (tile.classList.contains('selected') !== (id === selected)) tile.classList.toggle('selected', id === selected);
+      const hinted = hint?.includes(id) ?? false;
+      if (tile.classList.contains('hinted') !== hinted) tile.classList.toggle('hinted', hinted);
+      setAttribute(tile, 'aria-pressed', String(id === selected));
+    }
+    this.selected = selected;
+    this.hint = hint ? [...hint] : null;
+  }
+
   private updateReadiness() {
     const loading = this.loadingImages.size > 0;
-    this.host.classList.toggle('art-loading', loading);
-    this.host.setAttribute('aria-busy', String(loading));
+    if (this.host.classList.contains('art-loading') !== loading) this.host.classList.toggle('art-loading', loading);
+    setAttribute(this.host, 'aria-busy', String(loading));
   }
 
   private pointerDown = (event: PointerEvent) => {
