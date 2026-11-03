@@ -1,0 +1,88 @@
+// @vitest-environment happy-dom
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { availablePairs, newGame, removePair, type Game, type Pair } from '../src/game';
+import { DEFAULT_SETTINGS, DEFAULT_STATS } from '../src/storage';
+
+const session = vi.hoisted(() => ({ game: null as Game | null }));
+vi.mock('../src/storage', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/storage')>(),
+  loadSession: vi.fn(async () => ({ game: session.game, settings: DEFAULT_SETTINGS, stats: DEFAULT_STATS, corrupt: false })),
+  saveSession: vi.fn(async () => DEFAULT_STATS),
+}));
+vi.mock('../src/fullscreen', () => ({ FullscreenController: class {} }));
+
+function deadEnd() {
+  const game = newGame(42);
+  while (availablePairs(game).length) {
+    const [a, b] = availablePairs(game)[0];
+    removePair(game, a, b);
+  }
+  expect(game.history.length).toBeLessThan(72);
+  return game;
+}
+async function start(game: Game) {
+  session.game = game;
+  await import('../src/main');
+  await vi.waitFor(() => expect(document.querySelectorAll('.tile').length).toBeGreaterThan(0));
+}
+function click(id: string) { document.querySelector<HTMLButtonElement>(id)!.click(); }
+function play(pair: Pair) {
+  for (const id of pair) document.querySelector(`[data-tile="${id}"]`)!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+}
+beforeEach(() => { vi.resetModules(); document.body.innerHTML = '<div id="app"></div>'; vi.useFakeTimers(); });
+afterEach(async () => { await vi.advanceTimersByTimeAsync(0); vi.clearAllTimers(); vi.useRealTimers(); document.body.innerHTML = ''; });
+
+it('offers three actions for a restored dead end and highlights the new game button', async () => {
+  await start(deadEnd());
+  const dialog = document.querySelector('dialog')!;
+  expect(dialog.open).toBe(true);
+  expect(document.querySelector('#dialog-title')!.textContent).toBe('Доступных ходов больше нет');
+  expect(document.querySelectorAll('.no-moves-actions button')).toHaveLength(3);
+  expect(document.querySelector('#no-moves-new')!.classList.contains('primary')).toBe(true);
+  click('#close-dialog');
+  expect(dialog.open).toBe(false);
+  click('#pause'); click('#pause');
+  expect(dialog.open).toBe(false);
+});
+it('opens the menu immediately after the last available move, including redo', async () => {
+  const game = deadEnd();
+  const pair = game.history.pop()!;
+  await start(game);
+  expect(document.querySelector('dialog')!.open).toBe(false);
+  play(pair);
+  expect(document.querySelector('dialog')!.open).toBe(true);
+  click('#close-dialog'); click('#undo'); click('#redo');
+  expect(document.querySelector('dialog')!.open).toBe(true);
+});
+it('shuffles the remaining tiles while preserving removed pairs', async () => {
+  const game = deadEnd(), history = structuredClone(game.history);
+  await start(game);
+  click('#no-moves-shuffle');
+  await vi.advanceTimersByTimeAsync(40);
+  expect(game.history).toEqual(history);
+  expect(game.shuffles).toBe(1);
+  expect(availablePairs(game).length).toBeGreaterThan(0);
+  expect(document.querySelector('dialog')!.open).toBe(false);
+});
+it('restarts the original deal with the same seed and all 144 tiles', async () => {
+  const game = deadEnd();
+  await start(game);
+  click('#no-moves-restart');
+  await vi.advanceTimersByTimeAsync(40);
+  expect(document.querySelectorAll('.tile')).toHaveLength(144);
+  const original = newGame(game.seed);
+  for (const tile of document.querySelectorAll<SVGSVGElement>('.tile')) {
+    expect(tile.dataset.sprite!.split(':')[0]).toBe(String(original.faces[Number(tile.dataset.tile)]));
+  }
+  expect(document.querySelector('#timer')!.textContent).toBe('00:00');
+  expect(document.querySelector('dialog')!.open).toBe(false);
+});
+it('starts a new game directly from the menu', async () => {
+  await start(deadEnd());
+  click('#no-moves-new');
+  await vi.advanceTimersByTimeAsync(40);
+  expect(document.querySelectorAll('.tile')).toHaveLength(144);
+  expect(document.querySelector('dialog')!.open).toBe(false);
+  expect(document.querySelector('#pairs')!.textContent).not.toBe('0');
+});
