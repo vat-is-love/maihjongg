@@ -16,6 +16,7 @@ beforeEach(() => {
   host.setPointerCapture = vi.fn();
   board = new Board(host, select);
   board.render(newGame(42), null, null, false);
+  for (const image of host.querySelectorAll('image')) image.dispatchEvent(new Event('load'));
 });
 afterEach(() => { host.remove(); });
 
@@ -82,9 +83,11 @@ describe('GNOME tile atlas', () => {
     const originalMarkup = tile.innerHTML;
     expect(sprite().getAttribute('width')).toBe('64');
     expect(sprite().getAttribute('height')).toBe('88');
-    expect(sprite().getAttribute('href')).toContain(',0,64,88)');
+    expect(sprite().getAttribute('viewBox')).toMatch(/ 0 64 88$/);
+    expect(host.querySelectorAll('image')).toHaveLength(288);
+    expect(new Set([...host.querySelectorAll('image')].map(image => image.getAttribute('href')))).toEqual(new Set(['/themes/postmodern.svg']));
     board.render(game, id, null, false);
-    expect(selectedSprite.getAttribute('href')).toContain(',88,64,88)');
+    expect(selectedSprite.getAttribute('viewBox')).toMatch(/ 88 64 88$/);
     expect(host.querySelector(`[data-tile="${id}"]`)).toBe(tile);
     expect(sprite()).toBe(originalSprite);
     expect(tile.innerHTML).toBe(originalMarkup);
@@ -100,4 +103,16 @@ describe('GNOME tile atlas', () => {
     expect(tileColumn(27)).toBe(12); // East wind, not the first wind in the GNOME sheet.
     expect(tileColumn(33)).toBe(37); // White dragon lies between the bonus groups.
   });
+});
+
+it('reveals a new deal only after every sprite is ready, including renders during loading', () => {
+  board.render(newGame(123), null, null, false);
+  expect(host.classList.contains('art-loading')).toBe(true);
+  const images = [...host.querySelectorAll('image')];
+  for (const image of images.slice(0, -1)) image.dispatchEvent(new Event('load'));
+  board.render(newGame(123), null, null, false);
+  expect(host.getAttribute('aria-busy')).toBe('true');
+  images.at(-1)!.dispatchEvent(new Event('load'));
+  expect(host.classList.contains('art-loading')).toBe(false);
+  expect(host.getAttribute('aria-busy')).toBe('false');
 });

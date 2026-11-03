@@ -28,8 +28,8 @@ export function tileColumn(face: number, variant = 0): number {
 }
 export function tileSprite(face: number, variant: number): string {
   const x = tileColumn(face, variant) * TILE_WIDTH;
-  // Keep both atlas crops mounted: selection must not load a new image URL.
-  return [false, true].map(highlighted => `<image class="tile-sprite ${highlighted ? 'tile-sprite-highlight' : 'tile-sprite-normal'}" href="${import.meta.env.BASE_URL}themes/postmodern.svg#svgView(viewBox(${x},${highlighted ? TILE_HEIGHT : 0},${TILE_WIDTH},${TILE_HEIGHT}))" width="${TILE_WIDTH}" height="${TILE_HEIGHT}" pointer-events="none"/>`).join('');
+  // All crops share the same URL and decoded atlas. Board reveals them together.
+  return [false, true].map(highlighted => `<svg class="tile-sprite ${highlighted ? 'tile-sprite-highlight' : 'tile-sprite-normal'}" viewBox="${x} ${highlighted ? TILE_HEIGHT : 0} ${TILE_WIDTH} ${TILE_HEIGHT}" width="${TILE_WIDTH}" height="${TILE_HEIGHT}" overflow="hidden" pointer-events="none"><image href="${import.meta.env.BASE_URL}themes/postmodern.svg" width="2752" height="176"/></svg>`).join('');
 }
 export function icon(name: string, size = 22): string {
   const paths: Record<string, string> = {

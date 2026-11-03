@@ -12,7 +12,8 @@ const $ = <T extends Element = HTMLElement>(selector: string) => document.queryS
 $('#app').innerHTML = `
   <main>
     <section class="game-shell" aria-label="Маджонг">
-      <div class="game-topbar">
+      <button id="toggle-controls" class="icon-button on-felt controls-toggle" aria-label="Показать управление" title="Показать управление" aria-expanded="false" aria-controls="game-controls game-toolbar">${icon('menu')}</button>
+      <div class="game-topbar" id="game-controls">
         <div class="progress-stat"><span class="stat-label">ОСТАЛОСЬ</span><strong><span id="remaining">144</span><span class="stat-total"> / 144</span></strong><div class="progress-track"><span id="progress"></span></div></div>
         <div class="pair-stat"><span class="stat-label">ДОСТУПНО ПАР</span><strong id="pairs">—</strong></div>
         <div class="time-stat"><span class="stat-label">ВРЕМЯ</span><strong id="timer">00:00</strong></div>
@@ -40,7 +41,7 @@ $('#app').innerHTML = `
         <button id="fullscreen" class="icon-button on-felt fullscreen-button" aria-label="На весь экран" title="На весь экран" aria-pressed="false">${icon('fullscreen', 17)}</button>
         <div id="board-note" class="board-note">Две одинаковые костяшки — одна пара</div>
       </div>
-      <div class="game-toolbar">
+      <div class="game-toolbar" id="game-toolbar">
         <div class="undo-group"><button id="undo" class="tool-button" title="Отменить ход (Ctrl+Z)">${icon('undo')}<span>Назад</span></button><button id="redo" class="tool-button" title="Повторить ход (Ctrl+Shift+Z)">${icon('redo')}<span>Вперёд</span></button></div>
         <div class="assist-group"><button id="shuffle" class="tool-button">${icon('shuffle')}<span>Перемешать</span></button></div>
       </div>
@@ -81,6 +82,25 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && gameMenu.open) {
     closeMenu();
     gameMenu.querySelector('summary')!.focus();
+  }
+});
+const shell = $<HTMLElement>('.game-shell');
+const controlsToggle = $<HTMLButtonElement>('#toggle-controls');
+function setControlsOpen(open: boolean) {
+  shell.classList.toggle('controls-open', open);
+  controlsToggle.setAttribute('aria-expanded', String(open));
+  const label = open ? 'Скрыть управление' : 'Показать управление';
+  controlsToggle.setAttribute('aria-label', label);
+  controlsToggle.title = label;
+  controlsToggle.innerHTML = icon(open ? 'close' : 'menu');
+  if (!open) closeMenu();
+}
+controlsToggle.addEventListener('click', () => setControlsOpen(!shell.classList.contains('controls-open')));
+$('#board').addEventListener('pointerdown', () => setControlsOpen(false));
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && shell.classList.contains('controls-open')) {
+    setControlsOpen(false);
+    controlsToggle.focus();
   }
 });
 const formatTime = (ms: number) => {
@@ -171,6 +191,7 @@ function selectTile(id: number) {
   selected = id; hint = null; render();
 }
 function showDialog(title: string, content: string) {
+  setControlsOpen(false);
   updateClock();
   $('#dialog-title').textContent = title;
   $('#dialog-content').innerHTML = content;
@@ -187,6 +208,7 @@ dialog.addEventListener('click', event => { if (event.target === dialog && event
 } });
 
 async function createGame(seed?: number) {
+  setControlsOpen(false);
   updateClock(); busy = true; paused = false; selected = null; hint = null;
   if (dialog.open) dialog.close();
   if (game) render();

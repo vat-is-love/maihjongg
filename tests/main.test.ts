@@ -25,9 +25,11 @@ async function start(game: Game) {
   session.game = game;
   await import('../src/main');
   await vi.waitFor(() => expect(document.querySelectorAll('.tile').length).toBeGreaterThan(0));
+  for (const image of document.querySelectorAll('#board image')) image.dispatchEvent(new Event('load'));
 }
 function click(id: string) { document.querySelector<HTMLButtonElement>(id)!.click(); }
 function play(pair: Pair) {
+  for (const image of document.querySelectorAll('#board image')) image.dispatchEvent(new Event('load'));
   for (const id of pair) document.querySelector(`[data-tile="${id}"]`)!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
 }
 beforeEach(() => { vi.resetModules(); document.body.innerHTML = '<div id="app"></div>'; vi.useFakeTimers(); });
@@ -85,4 +87,22 @@ it('starts a new game directly from the menu', async () => {
   expect(document.querySelectorAll('.tile')).toHaveLength(144);
   expect(document.querySelector('dialog')!.open).toBe(false);
   expect(document.querySelector('#pairs')!.textContent).not.toBe('0');
+});
+
+it('toggles mobile controls and dismisses them when returning to the board', async () => {
+  await start(newGame(42));
+  const toggle = document.querySelector<HTMLButtonElement>('#toggle-controls')!;
+  const shell = document.querySelector('.game-shell')!;
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  toggle.click();
+  expect(shell.classList.contains('controls-open')).toBe(true);
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  const menu = document.querySelector<HTMLDetailsElement>('#game-menu')!;
+  menu.open = true;
+  document.querySelector('#board')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(menu.open).toBe(false);
+  toggle.click();
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
 });

@@ -7,6 +7,7 @@ export class Board {
   private svg: SVGSVGElement;
   private tiles: SVGGElement;
   private pointers = new Map<number, { x: number; y: number }>();
+  private loadingImages = new Set<SVGImageElement>();
   private moved = false;
   private pressedTile: number | null = null;
   constructor(private host: HTMLElement, private onSelect: (id: number) => void) {
@@ -19,12 +20,12 @@ export class Board {
     host.addEventListener('pointercancel', this.pointerCancel);
     this.svg.addEventListener('click', event => {
       // Physical pointers are handled directly. Keep synthetic accessibility clicks.
-      if (event.detail !== 0) return;
+      if (event.detail !== 0 || this.loadingImages.size) return;
       const target = (event.target as Element).closest('[data-tile]');
       if (target) this.onSelect(Number(target.getAttribute('data-tile')));
     });
     this.svg.addEventListener('keydown', event => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
+      if (this.loadingImages.size || (event.key !== 'Enter' && event.key !== ' ')) return;
       const target = (event.target as Element).closest('[data-tile]');
       if (target) { event.preventDefault(); this.onSelect(Number(target.getAttribute('data-tile'))); }
     });
@@ -63,6 +64,12 @@ export class Board {
           ${tileSprite(game.faces[s.id], variants[s.id])}
           <polygon class="tile-hitbox" points="9,0 ${TILE_WIDTH},0 ${TILE_WIDTH},79 55,${TILE_HEIGHT} 0,${TILE_HEIGHT} 0,9" fill="transparent" pointer-events="all"/>
           <path class="tile-outline" d="M10 1H62V78H10Z"/>`;
+        for (const image of tile.querySelectorAll<SVGImageElement>('image')) {
+          this.loadingImages.add(image);
+          const ready = () => { this.loadingImages.delete(image); this.updateReadiness(); };
+          image.addEventListener('load', ready, { once: true });
+          image.addEventListener('error', ready, { once: true });
+        }
         tile.dataset.sprite = spriteKey;
       }
       tile.setAttribute('class', ['tile', free ? 'free' : 'blocked', selected === s.id ? 'selected' : '',
@@ -72,10 +79,18 @@ export class Board {
       tile.setAttribute('aria-pressed', String(selected === s.id));
       tile.setAttribute('aria-label', `${FACE_NAMES[game.faces[s.id]]}${free ? ', свободна' : ', закрыта'}`);
     }
+    for (const image of this.loadingImages) if (!this.svg.contains(image)) this.loadingImages.delete(image);
+    this.updateReadiness();
+  }
+
+  private updateReadiness() {
+    const loading = this.loadingImages.size > 0;
+    this.host.classList.toggle('art-loading', loading);
+    this.host.setAttribute('aria-busy', String(loading));
   }
 
   private pointerDown = (event: PointerEvent) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || this.loadingImages.size) return;
     const target = (event.target as Element).closest('[data-tile]');
     if (event.pointerType === 'mouse' && event.button === 0 && target) {
       // A moving mouse should select on press, never become a touch-pan gesture.
