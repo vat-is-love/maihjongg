@@ -102,7 +102,7 @@ describe('GNOME tile atlas', () => {
     expect(sprite().getAttribute('height')).toBe('88');
     expect(sprite().getAttribute('viewBox')).toMatch(/ 0 64 88$/);
     expect(host.querySelectorAll('image')).toHaveLength(288);
-    expect(new Set([...host.querySelectorAll('image')].map(image => image.getAttribute('href')))).toEqual(new Set(['/themes/postmodern.svg']));
+    expect(new Set([...host.querySelectorAll('image')].map(image => image.getAttribute('href')))).toEqual(new Set(['/themes/postmodern.webp']));
     board.render(game, id, null, false);
     expect(selectedSprite.getAttribute('viewBox')).toMatch(/ 88 64 88$/);
     expect(host.querySelector(`[data-tile="${id}"]`)).toBe(tile);

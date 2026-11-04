@@ -21,7 +21,7 @@ function deadEnd() {
   expect(game.history.length).toBeLessThan(72);
   return game;
 }
-async function start(game: Game) {
+async function start(game: Game | null) {
   session.game = game;
   await import('../src/main');
   await vi.waitFor(() => expect(document.querySelectorAll('.tile').length).toBeGreaterThan(0));
@@ -33,7 +33,7 @@ function play(pair: Pair) {
   for (const id of pair) document.querySelector(`[data-tile="${id}"]`)!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
 }
 beforeEach(() => { vi.resetModules(); session.mobileMode = false; document.body.innerHTML = '<div id="app"></div>'; vi.useFakeTimers(); });
-afterEach(async () => { await vi.advanceTimersByTimeAsync(0); vi.clearAllTimers(); vi.useRealTimers(); document.body.innerHTML = ''; });
+afterEach(async () => { await vi.advanceTimersByTimeAsync(0); vi.clearAllTimers(); vi.restoreAllMocks(); vi.useRealTimers(); document.body.innerHTML = ''; });
 
 it('offers three actions for a restored dead end and highlights the new game button', async () => {
   await start(deadEnd());
@@ -233,4 +233,34 @@ it('cancels automatic advance when a winning move is undone', async () => {
   await vi.advanceTimersByTimeAsync(4000);
   expect(document.querySelectorAll('.tile')).toHaveLength(2);
   expect(document.querySelector('.victory')).toBeNull();
+});
+
+
+it('generates the initial deal asynchronously when no saved game exists', async () => {
+  await start(null);
+  expect(document.querySelectorAll('.tile')).toHaveLength(144);
+  expect(document.querySelector('.game-shell')!.hasAttribute('inert')).toBe(false);
+});
+it('saves the simplified graphics preference and applies it immediately', async () => {
+  await start(newGame(42)); click('#settings');
+  click('#simple-effects');
+  expect(document.body.classList.contains('simple-effects')).toBe(true);
+  await vi.advanceTimersByTimeAsync(0);
+  const { saveSession } = await import('../src/storage');
+  expect(saveSession).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ simpleEffects: true }));
+  click('#simple-effects');
+  expect(document.body.classList.contains('simple-effects')).toBe(false);
+});
+it('keeps the current position and unlocks controls after a worker failure while shuffling', async () => {
+  const game = deadEnd(); await start(game);
+  const original = structuredClone(game);
+  const { GameEngine } = await import('../src/game-engine');
+  vi.spyOn(GameEngine.prototype, 'run').mockRejectedValueOnce(new Error('Сбой расчёта'));
+  click('#no-moves-shuffle'); await vi.advanceTimersByTimeAsync(40);
+  expect(game.faces).toEqual(original.faces);
+  expect(game.history).toEqual(original.history);
+  expect(game.shuffles).toBe(original.shuffles);
+  expect(document.querySelector('dialog')!.open).toBe(true);
+  expect(document.querySelector('#dialog-content')!.textContent).toContain('Сбой расчёта');
+  expect(document.querySelector<HTMLButtonElement>('#shuffle')!.disabled).toBe(false);
 });

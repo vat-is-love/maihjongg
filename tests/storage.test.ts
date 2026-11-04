@@ -63,3 +63,17 @@ it('persists mobile mode together with the current compact deal', async () => {
   expect(loaded.game).toEqual(game);
   expect(loaded.settings).toEqual(settings);
 });
+
+
+it('restores simplified graphics and defaults old preferences to full graphics', async () => {
+  const game = newGame(9, 'terraces-6x8');
+  await saveSession(game, { ...DEFAULT_SETTINGS, simpleEffects: true });
+  expect((await loadSession()).settings.simpleEffects).toBe(true);
+  const { openDB } = await import('idb');
+  const database = await openDB('nephrite-mahjongg', 1);
+  await database.put('state', { highlightFree: true, reducedMotion: false }, 'settings');
+  const loaded = await loadSession();
+  expect(loaded.game).toEqual(game);
+  expect(loaded.settings).toMatchObject({ highlightFree: true, simpleEffects: false });
+  database.close();
+});

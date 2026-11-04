@@ -90,3 +90,6 @@ main{padding-top:28px;padding-bottom:24px}
   .game-shell.compact-layout .fullscreen-button{top:calc(env(safe-area-inset-top) + 106px)}
   .compact-layout .game-menu-panel{max-height:calc(100dvh - env(safe-area-inset-top) - 110px)}
 }
+
+/* Keep opacity and outlines for locked/selected tiles; skip costly effects. */
+.simple-effects *,.simple-effects *::before,.simple-effects *::after,.simple-effects dialog::backdrop{filter:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;box-shadow:none!important;text-shadow:none!important}

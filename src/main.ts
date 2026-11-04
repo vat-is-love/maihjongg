@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Nephrite contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 import './style.css';
-import { LAYOUTS, isMobileLayout, nextMobileLayout, getLayout, layoutId, availablePairs, isFree, newGame, redo, removedTiles, removePair, shuffleRemaining, undo, type Game, type Pair } from './game';
+import { LAYOUTS, isMobileLayout, nextMobileLayout, getLayout, layoutId, availablePairs, isFree, redo, removedTiles, removePair, undo, type Game, type Pair } from './game';
 import { Board } from './board';
+import { GameEngine } from './game-engine';
 import { FullscreenController } from './fullscreen';
 import { icon } from './art';
 import { DEFAULT_SETTINGS, DEFAULT_STATS, importScores, loadScores, loadSession, saveSession, type Settings } from './storage';
@@ -54,6 +55,8 @@ $('#app').innerHTML = `
   <dialog id="dialog" aria-labelledby="dialog-title"><div class="dialog-heading"><h2 id="dialog-title"></h2><button id="close-dialog" class="icon-button" aria-label="Закрыть">${icon('close')}</button></div><div id="dialog-content"></div></dialog>
 `;
 
+const engine = new GameEngine();
+if (import.meta.hot) import.meta.hot.dispose(() => engine.dispose());
 let game: Game;
 let settings: Settings = { ...DEFAULT_SETTINGS };
 let stats = structuredClone(DEFAULT_STATS);
@@ -185,6 +188,7 @@ function render() {
     }
   }
   document.body.classList.toggle('reduce-motion', settings.reducedMotion);
+  document.body.classList.toggle('simple-effects', settings.simpleEffects);
 }
 function selectTile(id: number) {
   if (paused || busy || dialog.open || complete()) return;
@@ -220,6 +224,7 @@ dialog.addEventListener('click', event => { if (event.target === dialog && event
 } });
 
 async function createGame(seed?: number, choice = seed !== undefined ? layoutId(game) : settings.mobileMode ? 'mobile-random' : layoutId(game)) {
+  if (busy) return;
   const mobileMode = seed !== undefined ? settings.mobileMode : choice === 'mobile-random';
   const layout = choice === 'mobile-random' ? nextMobileLayout(layoutId(game)) : choice;
   setControlsOpen(false);
@@ -228,7 +233,9 @@ async function createGame(seed?: number, choice = seed !== undefined ? layoutId(
   if (game) render();
   await new Promise(resolve => setTimeout(resolve, 30));
   try {
-    game = newGame(seed, layout);
+    const generated = await engine.run({ kind: 'generate', seed, layout });
+    if (!generated) throw new Error('Не удалось подготовить раскладку. Попробуйте ещё раз.');
+    game = generated;
     settings.mobileMode = mobileMode;
     $<HTMLSelectElement>('#layout').value = mobileMode ? 'mobile-random' : layout; started = false; hintIndex = 0;
     status(`${getLayout(layout).name}: ${game.faces.length} плиток. У партии есть решение.`);
@@ -276,18 +283,23 @@ $('#shuffle').addEventListener('click', () => {
   $('#confirm-shuffle').addEventListener('click', () => void doShuffle());
 });
 async function doShuffle() {
+  if (busy) return;
   updateClock(); busy = true; selected = null; hint = null; hintIndex = 0;
   if (dialog.open) dialog.close();
   render();
   await new Promise(resolve => setTimeout(resolve, 30));
   let success = false;
-  try { success = shuffleRemaining(game); }
+  let failure: string | undefined;
+  try {
+    const shuffled = await engine.run({ kind: 'shuffle', game });
+    if (shuffled) { Object.assign(game, shuffled); success = true; }
+  } catch (error) { failure = error instanceof Error ? error.message : 'Не удалось перемешать поле.'; }
   finally { busy = false; previousTick = performance.now(); }
   status(success ? 'Костяшки перемешаны. Для оставшегося поля есть решение.' : 'Для этой позиции не удалось найти раздачу. Отмените несколько ходов или начните раскладку заново.');
   render(); persist();
   if (!success) {
     showNoMoves();
-    $('#dialog-content p').textContent = 'Не удалось перемешать эту позицию. Можно закрыть меню и отменить несколько ходов, повторить раскладку или начать новую игру.';
+    $('#dialog-content p').textContent = (failure ? `${failure} ` : '') + 'Не удалось перемешать эту позицию. Можно закрыть меню и отменить несколько ходов, повторить раскладку или начать новую игру.';
   }
 }
 function showNoMoves() {
@@ -323,11 +335,13 @@ function showSettings() {
   showDialog('Настройки', `
     <div class="settings-row"><label for="highlight"><strong>Подсвечивать свободные</strong><small>Приглушить закрытые костяшки</small></label><input id="highlight" type="checkbox" ${settings.highlightFree ? 'checked' : ''}/></div>
     <div class="settings-row"><label for="motion"><strong>Меньше движения</strong><small>Убрать анимацию подсказок</small></label><input id="motion" type="checkbox" ${settings.reducedMotion ? 'checked' : ''}/></div>
+    <div class="settings-row"><label for="simple-effects"><strong>Упростить графику</strong><small>Убрать фильтры, размытие и тени</small></label><input id="simple-effects" type="checkbox" ${settings.simpleEffects ? 'checked' : ''}/></div>
     <div class="personal-stats"><div><span>Завершено партий</span><strong>${stats.wins}</strong></div><div><span>Лучшее время</span><strong>${stats.bestMs === null ? '—' : formatTime(stats.bestMs)}</strong></div></div>
     <p class="muted">Результаты включают партии с подсказками и перемешиванием. Партия и настройки хранятся только в IndexedDB этого браузера. Очистка данных сайта удалит их.</p>
     <button id="restart" class="button secondary full-width">Начать эту раздачу заново</button>
   `);
   $('#highlight').addEventListener('change', event => { settings.highlightFree = (event.target as HTMLInputElement).checked; render(); persist(); });
+  $('#simple-effects').addEventListener('change', event => { settings.simpleEffects = (event.target as HTMLInputElement).checked; render(); persist(); });
   $('#motion').addEventListener('change', event => { settings.reducedMotion = (event.target as HTMLInputElement).checked; render(); persist(); });
   $('#restart').addEventListener('click', () => {
     showDialog('Повторить раздачу?', `<p>Рисунки вернутся на исходные места. Время и история ходов будут сброшены.</p><div class="dialog-actions"><button id="cancel-restart" class="button secondary">Отмена</button><button id="confirm-restart" class="button primary">Начать заново</button></div>`);
@@ -450,16 +464,23 @@ async function setupOffline() {
 }
 
 async function start() {
+  shell.setAttribute('inert', '');
   let restored = false, corrupt = false;
   try {
     const saved = await loadSession();
     settings = { ...saved.settings }; stats = saved.stats; corrupt = saved.corrupt;
     if (saved.game) { game = saved.game; restored = true; }
   } catch { storageError(); }
-  if (!restored) game = newGame();
+  if (!restored) {
+    status('Готовим первую партию…');
+    const generated = await engine.run({ kind: 'generate', layout: 'turtle' });
+    if (!generated) throw new Error('Не удалось подготовить первую партию.');
+    game = generated;
+  }
   $<HTMLSelectElement>('#layout').value = settings.mobileMode ? 'mobile-random' : layoutId(game);
   started = game!.elapsedMs > 0 || game!.history.length > 0;
   previousTick = performance.now(); render();
+  shell.removeAttribute('inert');
   if (restored) status('Ваша партия восстановлена. Продолжим с того же места.');
   if (corrupt) status('Сохранение повреждено или имеет другой формат. Подготовлена новая партия.');
   persist();

@@ -13,7 +13,9 @@ data/maps/mahjongg.map: © 2004–2025 Mahjongg Contributors, GPL-3.0-or-later.
 
 Форма и рисунки костяшек — оригинальная тема Postmodern из GNOME Mahjongg:
 © 2004–2025 Mahjongg Contributors, GPL-3.0-or-later.
-Файл public/themes/postmodern.svg включён без изменений; уведомления —
+Файл public/themes/postmodern.svg включён без изменений; растровый атлас
+public/themes/postmodern.webp получен из него в разрешении 5504 × 352 без потерь.
+Воспроизведение: scripts/render-atlas.py (ImageMagick и Pillow). Уведомления —
 public/themes/postmodern.svg.license.
 Источник: https://github.com/GNOME/gnome-mahjongg/blob/main/data/themes/postmodern.svg
 Иконка приложения создана для этого проекта.
