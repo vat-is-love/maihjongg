@@ -3,12 +3,12 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { isValidGame, layoutId, type Game } from './game';
 import type { Score } from './scores';
 
-export interface Settings { highlightFree: boolean; reducedMotion: boolean }
+export interface Settings { highlightFree: boolean; reducedMotion: boolean; mobileMode: boolean }
 export interface Stats { wins: number; bestMs: number | null; completedIds: string[] }
 interface Database extends DBSchema {
   state: { key: string; value: Game | Settings | Stats | Score[] };
 }
-export const DEFAULT_SETTINGS: Settings = { highlightFree: false, reducedMotion: false };
+export const DEFAULT_SETTINGS: Settings = { highlightFree: false, reducedMotion: false, mobileMode: false };
 export const DEFAULT_STATS: Stats = { wins: 0, bestMs: null, completedIds: [] };
 let connection: Promise<IDBPDatabase<Database>> | undefined;
 const db = () => connection ??= openDB<Database>('nephrite-mahjongg', 1, {
@@ -32,6 +32,7 @@ export async function loadSession(): Promise<{ game: Game | null; settings: Sett
     settings: {
       highlightFree: preferences?.highlightFree === true,
       reducedMotion: preferences?.reducedMotion === true,
+      mobileMode: preferences?.mobileMode === true,
     },
     stats: previous && Number.isInteger(previous.wins) && (previous.wins ?? -1) >= 0 &&
       (previous.bestMs === null || (Number.isFinite(previous.bestMs) && previous.bestMs! >= 0)) &&

@@ -3,6 +3,8 @@
 // Turtle coordinates adapted from GNOME Mahjongg, data/maps/mahjongg.map.
 // SPDX-FileCopyrightText: 2004-2025 Mahjongg Contributors
 
+import { GNOME_LAYOUTS } from './gnome-layouts';
+
 export interface Slot { id: number; x: number; y: number; z: number }
 export type Pair = [number, number];
 export interface Game {
@@ -55,6 +57,17 @@ export const LAYOUTS: Layout[] = [
   { id: 'garden-7x7', name: 'Сад 7 × 7', slots: blocks([[0,0,7,7,0],[1,1,5,5,1]], true) },
   { id: 'islands-7x7', name: 'Острова 7 × 7', slots: blocks([0,4].flatMap(x => [0,4].flatMap(y => [[x,y,3,3,0],[x+.5,y+.5,2,2,1],[x+1,y+1,1,1,2]]))) },
 ];
+LAYOUTS.push(...GNOME_LAYOUTS.map(layout => ({ id: layout.id, name: layout.name,
+  slots: layout.coordinates.map(([x, y, z], id) => ({ id, x, y, z })),
+})));
+export const isMobileLayout = (layout: Layout) =>
+  Math.max(...layout.slots.map(s => s.x)) - Math.min(...layout.slots.map(s => s.x)) + 1 <= 7 &&
+  Math.max(...layout.slots.map(s => s.y)) - Math.min(...layout.slots.map(s => s.y)) + 1 <= 8;
+export const MOBILE_LAYOUTS = LAYOUTS.filter(isMobileLayout);
+export function nextMobileLayout(previous: string, rng = Math.random): string {
+  const choices = MOBILE_LAYOUTS.filter(layout => layout.id !== previous);
+  return choices[Math.floor(rng() * choices.length)].id;
+}
 export const SLOTS = LAYOUTS[0].slots;
 export const layoutId = (game: Game) => game.layout ?? 'turtle';
 export const getLayout = (id = 'turtle'): Layout => {

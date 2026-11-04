@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { availablePairs, newGame, removePair, type Game, type Pair } from '../src/game';
+import { LAYOUTS, MOBILE_LAYOUTS, random, removalPath, availablePairs, newGame, removePair, type Game, type Pair } from '../src/game';
 import { DEFAULT_SETTINGS, DEFAULT_STATS } from '../src/storage';
 
-const session = vi.hoisted(() => ({ game: null as Game | null }));
+const session = vi.hoisted(() => ({ game: null as Game | null, mobileMode: false }));
 vi.mock('../src/storage', async importOriginal => ({
   ...await importOriginal<typeof import('../src/storage')>(),
-  loadSession: vi.fn(async () => ({ game: session.game, settings: DEFAULT_SETTINGS, stats: DEFAULT_STATS, corrupt: false })),
+  loadSession: vi.fn(async () => ({ game: session.game, settings: { ...DEFAULT_SETTINGS, mobileMode: session.mobileMode }, stats: DEFAULT_STATS, corrupt: false })),
   saveSession: vi.fn(async () => DEFAULT_STATS),
 }));
 vi.mock('../src/fullscreen', () => ({ FullscreenController: class {} }));
@@ -32,7 +32,7 @@ function play(pair: Pair) {
   for (const image of document.querySelectorAll('#board image')) image.dispatchEvent(new Event('load'));
   for (const id of pair) document.querySelector(`[data-tile="${id}"]`)!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
 }
-beforeEach(() => { vi.resetModules(); document.body.innerHTML = '<div id="app"></div>'; vi.useFakeTimers(); });
+beforeEach(() => { vi.resetModules(); session.mobileMode = false; document.body.innerHTML = '<div id="app"></div>'; vi.useFakeTimers(); });
 afterEach(async () => { await vi.advanceTimersByTimeAsync(0); vi.clearAllTimers(); vi.useRealTimers(); document.body.innerHTML = ''; });
 
 it('offers three actions for a restored dead end and highlights the new game button', async () => {
@@ -139,7 +139,7 @@ it('toggles mobile controls and dismisses them when returning to the board', asy
 it('starts the chosen compact layout, updates totals, and can return to Turtle', async () => {
   await start(newGame(42));
   const select = document.querySelector<HTMLSelectElement>('#layout')!;
-  expect(select.options).toHaveLength(7);
+  expect(select.options.length).toBe(LAYOUTS.length + 1);
   select.value = 'garden-7x7';
   click('#new-game');
   await vi.advanceTimersByTimeAsync(40);
@@ -164,4 +164,73 @@ it('restores and restarts a compact deal with its layout and recognizes its fina
   click('#play-again'); await vi.advanceTimersByTimeAsync(40);
   expect(document.querySelectorAll('.tile')).toHaveLength(56);
   expect(document.querySelector<HTMLSelectElement>('#layout')!.value).toBe('islands-7x7');
+});
+
+
+it.each(MOBILE_LAYOUTS.map(layout => layout.id))('keeps recovery visible for a compact dead end: %s', async layout => {
+  let game!: Game;
+  for (let seed = 0; seed < 100; seed++) {
+    game = newGame(seed, layout);
+    while (availablePairs(game).length) removePair(game, ...availablePairs(game)[0]);
+    if (game.history.length * 2 < game.faces.length) break;
+  }
+  expect(game.history.length * 2).toBeLessThan(game.faces.length);
+  const last = game.history.pop()!;
+  await start(game);
+  play(last);
+  expect(document.querySelector('dialog')!.open).toBe(true);
+  click('#close-dialog');
+  expect(document.querySelector<HTMLElement>('#board-overlay')!.hidden).toBe(false);
+  click('#continue-stalled');
+  expect(document.querySelector('dialog')!.open).toBe(true);
+  click('#close-dialog'); click('#undo');
+  expect(document.querySelector<HTMLElement>('#board-overlay')!.hidden).toBe(true);
+  click('#redo');
+  expect(document.querySelector('dialog')!.open).toBe(true);
+});
+it('marks compact controls as permanent and removes that mode for a desktop field', async () => {
+  await start(newGame(42, 'garden-7x7'));
+  const shell = document.querySelector('.game-shell')!;
+  expect(shell.classList.contains('compact-layout')).toBe(true);
+  document.querySelector<HTMLSelectElement>('#layout')!.value = 'turtle';
+  click('#new-game'); await vi.advanceTimersByTimeAsync(40);
+  expect(shell.classList.contains('compact-layout')).toBe(false);
+});
+it('starts a random compact field when mobile mode is selected', async () => {
+  await start(newGame(42));
+  const select = document.querySelector<HTMLSelectElement>('#layout')!;
+  select.value = 'mobile-random'; click('#new-game');
+  await vi.advanceTimersByTimeAsync(40);
+  expect(select.value).toBe('mobile-random');
+  expect(document.querySelector('.compact-layout')).not.toBeNull();
+  const { saveSession } = await import('../src/storage');
+  expect(saveSession).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ mobileMode: true }));
+});
+it('restores mobile mode and advances automatically after a win without repeating the layout', async () => {
+  session.mobileMode = true;
+  const game = newGame(13, 'islands-7x7');
+  const path = removalPath(new Set(), random(13), game.layout)!;
+  for (const pair of path.slice(0, -1)) removePair(game, ...pair);
+  await start(game);
+  expect(document.querySelector<HTMLSelectElement>('#layout')!.value).toBe('mobile-random');
+  play(path.at(-1)!);
+  expect(document.querySelector('.victory')).not.toBeNull();
+  await vi.advanceTimersByTimeAsync(2999);
+  expect(document.querySelector('.victory')).not.toBeNull();
+  await vi.advanceTimersByTimeAsync(50);
+  expect(document.querySelector('.victory')).toBeNull();
+  const { saveSession } = await import('../src/storage');
+  const savedGame = vi.mocked(saveSession).mock.calls.at(-1)![0];
+  expect(savedGame.layout).not.toBe(game.layout);
+  expect(MOBILE_LAYOUTS.some(layout => layout.id === savedGame.layout)).toBe(true);
+});
+it('cancels automatic advance when a winning move is undone', async () => {
+  session.mobileMode = true;
+  const game = newGame(13, 'islands-7x7');
+  const path = removalPath(new Set(), random(13), game.layout)!;
+  for (const pair of path.slice(0, -1)) removePair(game, ...pair);
+  await start(game); play(path.at(-1)!); click('#undo');
+  await vi.advanceTimersByTimeAsync(4000);
+  expect(document.querySelectorAll('.tile')).toHaveLength(2);
+  expect(document.querySelector('.victory')).toBeNull();
 });

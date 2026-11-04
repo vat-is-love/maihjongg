@@ -53,3 +53,13 @@ it('restores a compact game and records its win under the correct layout exactly
   expect((await saveSession(game, DEFAULT_SETTINGS)).wins).toBe(before + 1);
   expect((await loadScores()).filter(s => s.id === `local:${game.id}`)).toMatchObject([{ layout: 'terraces-6x8' }]);
 });
+
+
+it('persists mobile mode together with the current compact deal', async () => {
+  const game = newGame(13, 'islands-7x7');
+  const settings = { ...DEFAULT_SETTINGS, mobileMode: true };
+  await saveSession(game, settings);
+  const loaded = await loadSession();
+  expect(loaded.game).toEqual(game);
+  expect(loaded.settings).toEqual(settings);
+});

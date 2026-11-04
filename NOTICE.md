@@ -5,9 +5,9 @@
 Код, интерфейс и иконка приложения: © 2026 Nephrite contributors.
 Лицензия: GPL-3.0-or-later. Полный текст GPLv3 находится в LICENSE.
 
-Раскладка «Черепаха» в src/game.ts адаптирована из Turtle в GNOME Mahjongg,
+Раскладки в src/game.ts и src/gnome-layouts.ts адаптированы из GNOME Mahjongg,
 data/maps/mahjongg.map: © 2004–2025 Mahjongg Contributors, GPL-3.0-or-later.
-Изменения 2026: перевод координат Turtle в TypeScript; остальные раскладки не используются.
+Изменения 2026: перевод координат всех десяти раскладок в TypeScript, русские названия.
 Оригинальный файл со всеми уведомлениями сохранён в public/upstream/mahjongg.map.
 Источник: https://github.com/GNOME/gnome-mahjongg/blob/main/data/maps/mahjongg.map
 

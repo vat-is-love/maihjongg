@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Nephrite contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 import './style.css';
-import { LAYOUTS, getLayout, layoutId, availablePairs, isFree, newGame, redo, removedTiles, removePair, shuffleRemaining, undo, type Game, type Pair } from './game';
+import { LAYOUTS, isMobileLayout, nextMobileLayout, getLayout, layoutId, availablePairs, isFree, newGame, redo, removedTiles, removePair, shuffleRemaining, undo, type Game, type Pair } from './game';
 import { Board } from './board';
 import { FullscreenController } from './fullscreen';
 import { icon } from './art';
@@ -22,7 +22,7 @@ $('#app').innerHTML = `
           <summary class="icon-button on-felt" aria-label="Меню игры" title="Меню игры">${icon('menu')}</summary>
           <nav class="game-menu-panel" aria-label="Меню игры">
             <button id="new-game">${icon('plus', 18)} Новая игра</button>
-            <label class="layout-choice" for="layout">Раскладка<select id="layout">${LAYOUTS.map(l => `<option value="${l.id}">${l.name} · ${l.slots.length} плиток</option>`).join('')}</select><small>Выберите и нажмите «Новая игра»</small></label>
+            <label class="layout-choice" for="layout">Раскладка<select id="layout"><option value="mobile-random">Мобильный режим · случайные поля</option>${LAYOUTS.map(l => `<option value="${l.id}">${l.name} · ${l.slots.length} плиток</option>`).join('')}</select><small>Выберите и нажмите «Новая игра». В мобильном режиме следующее поле начнётся само после победы.</small></label>
             <button id="hint">${icon('hint', 18)} Подсказка</button>
             <button id="scores">${icon('trophy', 18)} Рекорды</button>
             <button id="settings">${icon('settings', 18)} Настройки</button>
@@ -60,6 +60,7 @@ let stats = structuredClone(DEFAULT_STATS);
 let selected: number | null = null;
 let hint: Pair | null = null;
 let hintIndex = 0;
+let nextGameTimer: ReturnType<typeof setTimeout> | undefined;
 let noMovesNotice: string | null = null;
 let started = false;
 let paused = false;
@@ -143,6 +144,9 @@ function render() {
   const remaining = total - game.history.length * 2;
   const pairs = availablePairs(game);
   const locked = paused || busy || complete();
+  const stalled = remaining > 0 && pairs.length === 0;
+  shell.classList.toggle('compact-layout', isMobileLayout(getLayout(layoutId(game))));
+  if (nextGameTimer !== undefined) { clearTimeout(nextGameTimer); nextGameTimer = undefined; }
   $('#remaining').textContent = String(remaining);
   $('.stat-total').textContent = ` / ${total}`;
   $('#pairs').textContent = String(pairs.length);
@@ -160,14 +164,19 @@ function render() {
   $('#board').setAttribute('inert', '');
   if (!locked && !dialog.open) $('#board').removeAttribute('inert');
   const overlay = $('#board-overlay');
-  overlay.hidden = !locked;
+  overlay.hidden = !locked && !stalled;
   $('#board').classList.toggle('concealed', paused);
   $('#board-note').hidden = locked;
   if (busy) overlay.innerHTML = `<div class="overlay-card"><span class="spinner"></span><h2>Раскладываем костяшки</h2><p>Готовим партию с решением…</p></div>`;
   else if (paused) overlay.innerHTML = `<div class="overlay-card"><span class="overlay-icon">${icon('leaf', 34)}</span><h2>Пауза</h2><p>Таймер остановлен.</p><button class="button cream" id="resume-game">${icon('play', 18)} Продолжить</button></div>`;
-  else if (complete()) overlay.innerHTML = `<div class="overlay-card victory"><span class="overlay-icon">${icon('trophy', 36)}</span><div class="eyebrow">ВСЕ ПАРЫ НАЙДЕНЫ</div><h2>Партия завершена</h2><p>${formatTime(game.elapsedMs)} · Подсказок: ${game.hints} · Перемешиваний: ${game.shuffles}</p><button class="button cream" id="play-again">${icon('plus', 18)} Ещё одна партия</button></div>`;
-  if (pairs.length || complete()) noMovesNotice = null;
-  if (!locked && !pairs.length) {
+  else if (complete()) overlay.innerHTML = `<div class="overlay-card victory"><span class="overlay-icon">${icon('trophy', 36)}</span><div class="eyebrow">ВСЕ ПАРЫ НАЙДЕНЫ</div><h2>Партия завершена</h2><p>${formatTime(game.elapsedMs)} · Подсказок: ${game.hints} · Перемешиваний: ${game.shuffles}</p><button class="button cream" id="play-again">${icon('plus', 18)} ${settings.mobileMode ? 'Следующая раскладка' : 'Ещё одна партия'}</button>${settings.mobileMode ? '<p>Следующая мобильная раскладка начнётся через 3 секунды.</p>' : ''}</div>`;
+  else if (stalled) overlay.innerHTML = `<div class="overlay-card"><h2>Доступных пар больше нет</h2><p>Можно перемешать поле, отменить ход или начать новую игру.</p><button class="button cream" id="continue-stalled">Как продолжить?</button></div>`;
+  else overlay.replaceChildren();
+  if (settings.mobileMode && complete() && !busy && !paused && !dialog.open && !document.hidden) {
+    nextGameTimer = setTimeout(() => { nextGameTimer = undefined; void createGame(); }, 3000);
+  }
+  if (!stalled) noMovesNotice = null;
+  if (!locked && stalled) {
     status('Доступных пар больше нет. Перемешайте костяшки, повторите раскладку или начните новую игру.');
     const position = JSON.stringify([game.id, game.history, game.shuffles]);
     if (!dialog.open && noMovesNotice !== position) {
@@ -194,6 +203,7 @@ function selectTile(id: number) {
 }
 function showDialog(title: string, content: string) {
   setControlsOpen(false);
+  if (nextGameTimer !== undefined) { clearTimeout(nextGameTimer); nextGameTimer = undefined; }
   updateClock();
   $('#dialog-title').textContent = title;
   $('#dialog-content').innerHTML = content;
@@ -209,7 +219,9 @@ dialog.addEventListener('click', event => { if (event.target === dialog && event
   if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) closeDialog();
 } });
 
-async function createGame(seed?: number, layout = layoutId(game)) {
+async function createGame(seed?: number, choice = seed !== undefined ? layoutId(game) : settings.mobileMode ? 'mobile-random' : layoutId(game)) {
+  const mobileMode = seed !== undefined ? settings.mobileMode : choice === 'mobile-random';
+  const layout = choice === 'mobile-random' ? nextMobileLayout(layoutId(game)) : choice;
   setControlsOpen(false);
   updateClock(); busy = true; paused = false; selected = null; hint = null;
   if (dialog.open) dialog.close();
@@ -217,7 +229,8 @@ async function createGame(seed?: number, layout = layoutId(game)) {
   await new Promise(resolve => setTimeout(resolve, 30));
   try {
     game = newGame(seed, layout);
-    $<HTMLSelectElement>('#layout').value = layout; started = false; hintIndex = 0;
+    settings.mobileMode = mobileMode;
+    $<HTMLSelectElement>('#layout').value = mobileMode ? 'mobile-random' : layout; started = false; hintIndex = 0;
     status(`${getLayout(layout).name}: ${game.faces.length} плиток. У партии есть решение.`);
   } catch (error) { status(error instanceof Error ? error.message : 'Не удалось начать игру.'); }
   busy = false; previousTick = performance.now(); render(); persist();
@@ -226,7 +239,8 @@ function requestNewGame() {
   if (busy) return;
   const layout = $<HTMLSelectElement>('#layout').value;
   if (complete() || (!game.history.length && game.elapsedMs === 0)) { void createGame(undefined, layout); return; }
-  showDialog('Начать новую партию?', `<p>Текущая партия будет заменена новой решаемой раздачей: ${getLayout(layout).name}, ${getLayout(layout).slots.length} плиток.</p><div class="dialog-actions"><button id="cancel-new" class="button secondary">Продолжить текущую</button><button id="confirm-new" class="button primary">Новая игра</button></div>`);
+  const description = layout === 'mobile-random' ? 'случайное компактное поле; после победы автоматически начнётся следующее' : `${getLayout(layout).name}, ${getLayout(layout).slots.length} плиток`;
+  showDialog('Начать новую партию?', `<p>Текущая партия будет заменена новой решаемой раздачей: ${description}.</p><div class="dialog-actions"><button id="cancel-new" class="button secondary">Продолжить текущую</button><button id="confirm-new" class="button primary">Новая игра</button></div>`);
   $('#cancel-new').addEventListener('click', closeDialog);
   $('#confirm-new').addEventListener('click', () => void createGame(undefined, layout));
 }
@@ -293,6 +307,7 @@ $('#pause').addEventListener('click', togglePause);
 $('#board-overlay').addEventListener('click', event => {
   if ((event.target as Element).closest('#resume-game')) togglePause();
   if ((event.target as Element).closest('#play-again')) void createGame();
+  if ((event.target as Element).closest('#continue-stalled')) showNoMoves();
 });
 new FullscreenController($('.game-shell'), $<HTMLButtonElement>('#fullscreen'));
 
@@ -381,7 +396,7 @@ async function showScores() {
 $('#scores').addEventListener('click', () => void showScores());
 $('#about').addEventListener('click', () => showDialog('Об игре', `
   <p class="dialog-lead">Маджонг-пасьянс.</p>
-  <p>Версия 0.1.0 · Костяшки Postmodern · Семь раскладок, включая шесть компактных для телефона.</p>
+  <p>Версия 0.1.0 · Костяшки Postmodern · ${LAYOUTS.length} раскладок, включая шесть компактных для телефона. Мобильный режим автоматически чередует компактные поля.</p>
   <p>Раскладка и оригинальные SVG-костяшки Postmodern взяты из <a href="https://github.com/GNOME/gnome-mahjongg" target="_blank" rel="noopener noreferrer">GNOME Mahjongg</a>, © 2004–2025 Mahjongg Contributors, GPL-3.0-or-later. Код приложения, интерфейс и иконка — © 2026 Nephrite contributors.</p>
   <p>Свободное ПО под GPL-3.0-or-later. Вы можете изучать, изменять и распространять игру на условиях лицензии. Без гарантий. Это независимый проект.</p>
   <div class="about-links"><a href="./LICENSE.txt" target="_blank" rel="noopener">Лицензия GPLv3</a>${import.meta.env.PROD ? '<a href="./source.tar.gz" download>Исходники этой версии</a>' : '<span class="muted">Архив исходников появится в production-сборке</span>'}</div>
@@ -400,7 +415,10 @@ document.addEventListener('visibilitychange', () => {
   const now = performance.now();
   if (document.hidden && game && started && !paused && !busy && !dialog.open && !complete()) game.elapsedMs += now - previousTick;
   previousTick = now;
-  if (document.hidden) persist();
+  if (document.hidden) {
+    if (nextGameTimer !== undefined) { clearTimeout(nextGameTimer); nextGameTimer = undefined; }
+    persist();
+  } else if (game && complete()) render();
 });
 window.addEventListener('pagehide', () => { updateClock(); persist(); });
 
@@ -435,11 +453,11 @@ async function start() {
   let restored = false, corrupt = false;
   try {
     const saved = await loadSession();
-    settings = saved.settings; stats = saved.stats; corrupt = saved.corrupt;
+    settings = { ...saved.settings }; stats = saved.stats; corrupt = saved.corrupt;
     if (saved.game) { game = saved.game; restored = true; }
   } catch { storageError(); }
   if (!restored) game = newGame();
-  $<HTMLSelectElement>('#layout').value = layoutId(game);
+  $<HTMLSelectElement>('#layout').value = settings.mobileMode ? 'mobile-random' : layoutId(game);
   started = game!.elapsedMs > 0 || game!.history.length > 0;
   previousTick = performance.now(); render();
   if (restored) status('Ваша партия восстановлена. Продолжим с того же места.');

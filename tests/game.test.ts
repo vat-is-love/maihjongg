@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { describe, expect, it } from 'vitest';
-import { SLOTS, availablePairs, freeTiles, isFree, isValidGame, newGame, random, redo, removalPath, removePair, removedTiles, shuffleRemaining, undo } from '../src/game';
+import { SLOTS, LAYOUTS, MOBILE_LAYOUTS, nextMobileLayout, availablePairs, freeTiles, isFree, isValidGame, newGame, random, redo, removalPath, removePair, removedTiles, shuffleRemaining, undo } from '../src/game';
 
 describe('Turtle rules', () => {
   it('has 144 unique slots, five layers and valid half-offset blockers', () => {
@@ -88,7 +88,7 @@ describe('Turtle rules', () => {
 describe('Compact layouts', () => {
   it('fits the advertised footprint and generates reproducible solvable deals', async () => {
     const { LAYOUTS } = await import('../src/game');
-    for (const layout of LAYOUTS.slice(1)) {
+    for (const layout of MOBILE_LAYOUTS) {
       const width = layout.id.endsWith('6x8') ? 6 : 7;
       const height = layout.id.endsWith('6x8') ? 8 : 7;
       expect(Math.max(...layout.slots.map(s => s.x)) + 1).toBe(width);
@@ -119,4 +119,31 @@ describe('Compact layouts', () => {
     expect(isValidGame({ ...legacy, layout: 'unknown' })).toBe(false);
     expect(isValidGame({ ...legacy, layout: 'garden-7x7' })).toBe(false);
   });
+});
+
+
+describe('Desktop GNOME layouts', () => {
+  it('has 144 unique positions per map and generates playable complete solutions', () => {
+    const desktop = LAYOUTS.filter(layout => layout.id !== 'turtle' && !MOBILE_LAYOUTS.includes(layout));
+    expect(desktop).toHaveLength(9);
+    for (const layout of desktop) {
+      expect(layout.slots).toHaveLength(144);
+      expect(new Set(layout.slots.map(s => `${s.x},${s.y},${s.z}`)).size).toBe(144);
+      for (let seed = 0; seed < 20; seed++) {
+        const game = newGame(seed, layout.id);
+        expect(isValidGame(game)).toBe(true);
+        const path = removalPath(new Set(), random(seed), layout.id)!;
+        expect(path).toHaveLength(72);
+        for (const pair of path) expect(removePair(game, ...pair), `${layout.id}, seed ${seed}`).toBe(true);
+      }
+    }
+  }, 20000);
+});
+it('chooses only compact mobile layouts and never repeats the previous field', () => {
+  expect(MOBILE_LAYOUTS).toHaveLength(6);
+  for (const previous of LAYOUTS) for (let seed = 0; seed < 30; seed++) {
+    const next = nextMobileLayout(previous.id, random(seed));
+    expect(MOBILE_LAYOUTS.some(layout => layout.id === next)).toBe(true);
+    expect(next).not.toBe(previous.id);
+  }
 });

@@ -77,3 +77,16 @@ main{padding-top:28px;padding-bottom:24px}
 /* Never expose a partially decoded deal, including the first load on a phone. */
 .board.art-loading .board-svg{visibility:hidden}
 .board.art-loading:after{content:"Раскладываем костяшки…";position:absolute;inset:0;display:grid;place-items:center;color:#dce6d6;font-size:13px;pointer-events:none}
+
+/* Compact phone boards reserve space for permanent controls above the tiles. */
+@media(max-width:760px), (max-height:540px) and (orientation:landscape){
+  .game-shell.compact-layout{display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+  .compact-layout .controls-toggle{display:none}
+  .game-shell.compact-layout .game-topbar,.game-shell.compact-layout .game-toolbar,.game-shell.compact-layout .fullscreen-button{visibility:visible;pointer-events:auto}
+  .game-shell.compact-layout .game-topbar{position:relative;top:auto;left:auto;right:auto;flex-shrink:0;order:0;margin:10px 10px 0;height:86px;box-shadow:none}
+  .game-shell.compact-layout .game-toolbar{position:relative;top:auto;left:auto;right:auto;flex-shrink:0;order:1;margin:0 10px;box-shadow:none}
+  .game-shell.compact-layout .board-wrap{position:relative;inset:auto;order:2;flex:1;min-height:0;display:flex}
+  .game-shell.compact-layout .board{flex:1;padding-top:0;padding-bottom:0}
+  .game-shell.compact-layout .fullscreen-button{top:calc(env(safe-area-inset-top) + 106px)}
+  .compact-layout .game-menu-panel{max-height:calc(100dvh - env(safe-area-inset-top) - 110px)}
+}
