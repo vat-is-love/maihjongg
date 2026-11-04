@@ -135,3 +135,33 @@ it('toggles mobile controls and dismisses them when returning to the board', asy
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
   expect(toggle.getAttribute('aria-expanded')).toBe('false');
 });
+
+it('starts the chosen compact layout, updates totals, and can return to Turtle', async () => {
+  await start(newGame(42));
+  const select = document.querySelector<HTMLSelectElement>('#layout')!;
+  expect(select.options).toHaveLength(7);
+  select.value = 'garden-7x7';
+  click('#new-game');
+  await vi.advanceTimersByTimeAsync(40);
+  expect(document.querySelectorAll('.tile')).toHaveLength(72);
+  expect(document.querySelector('#remaining')!.textContent).toBe('72');
+  expect(document.querySelector('.stat-total')!.textContent).toBe(' / 72');
+  select.value = 'turtle'; click('#new-game');
+  await vi.advanceTimersByTimeAsync(40);
+  expect(document.querySelectorAll('.tile')).toHaveLength(144);
+});
+
+it('restores and restarts a compact deal with its layout and recognizes its final pair', async () => {
+  const { random, removalPath } = await import('../src/game');
+  const game = newGame(13, 'islands-7x7');
+  const path = removalPath(new Set(), random(13), game.layout)!;
+  for (const pair of path.slice(0, -1)) removePair(game, ...pair);
+  await start(game);
+  expect(document.querySelector<HTMLSelectElement>('#layout')!.value).toBe('islands-7x7');
+  play(path.at(-1)!);
+  expect(document.querySelector('.victory')).not.toBeNull();
+  expect(document.querySelector('#remaining')!.textContent).toBe('0');
+  click('#play-again'); await vi.advanceTimersByTimeAsync(40);
+  expect(document.querySelectorAll('.tile')).toHaveLength(56);
+  expect(document.querySelector<HTMLSelectElement>('#layout')!.value).toBe('islands-7x7');
+});

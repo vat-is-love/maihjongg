@@ -133,3 +133,19 @@ it('reveals a new deal only after every sprite is ready, including renders durin
   expect(host.classList.contains('art-loading')).toBe(false);
   expect(host.getAttribute('aria-busy')).toBe('false');
 });
+
+it('rebuilds geometry when changing layouts and fits every tile inside the viewBox', async () => {
+  const { LAYOUTS } = await import('../src/game');
+  for (const layout of [...LAYOUTS.slice(1), LAYOUTS[0]]) {
+    const game = newGame(42, layout.id);
+    board.render(game, null, null, true);
+    const [x, y, width, height] = host.querySelector('svg')!.getAttribute('viewBox')!.split(' ').map(Number);
+    expect(host.querySelectorAll('.tile')).toHaveLength(layout.slots.length);
+    for (const tile of host.querySelectorAll('.tile')) {
+      expect(Number(tile.getAttribute('x'))).toBeGreaterThanOrEqual(x);
+      expect(Number(tile.getAttribute('y'))).toBeGreaterThanOrEqual(y);
+      expect(Number(tile.getAttribute('x')) + 64).toBeLessThanOrEqual(x + width);
+      expect(Number(tile.getAttribute('y')) + 88).toBeLessThanOrEqual(y + height);
+    }
+  }
+});

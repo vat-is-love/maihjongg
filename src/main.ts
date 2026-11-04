@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Nephrite contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 import './style.css';
-import { availablePairs, isFree, newGame, redo, removedTiles, removePair, shuffleRemaining, undo, type Game, type Pair } from './game';
+import { LAYOUTS, getLayout, layoutId, availablePairs, isFree, newGame, redo, removedTiles, removePair, shuffleRemaining, undo, type Game, type Pair } from './game';
 import { Board } from './board';
 import { FullscreenController } from './fullscreen';
 import { icon } from './art';
@@ -22,7 +22,7 @@ $('#app').innerHTML = `
           <summary class="icon-button on-felt" aria-label="Меню игры" title="Меню игры">${icon('menu')}</summary>
           <nav class="game-menu-panel" aria-label="Меню игры">
             <button id="new-game">${icon('plus', 18)} Новая игра</button>
-            <label class="layout-choice" for="layout">Раскладка<select id="layout"><option value="turtle">Черепаха</option></select></label>
+            <label class="layout-choice" for="layout">Раскладка<select id="layout">${LAYOUTS.map(l => `<option value="${l.id}">${l.name} · ${l.slots.length} плиток</option>`).join('')}</select><small>Выберите и нажмите «Новая игра»</small></label>
             <button id="hint">${icon('hint', 18)} Подсказка</button>
             <button id="scores">${icon('trophy', 18)} Рекорды</button>
             <button id="settings">${icon('settings', 18)} Настройки</button>
@@ -108,7 +108,7 @@ const formatTime = (ms: number) => {
   const minutes = Math.floor(seconds / 60);
   return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 };
-const complete = () => game.history.length === 72;
+const complete = () => game.history.length * 2 === game.faces.length;
 const status = (message: string) => { $('#status').textContent = message; };
 
 function updateClock() {
@@ -139,12 +139,14 @@ function persist() {
   });
 }
 function render() {
-  const remaining = 144 - game.history.length * 2;
+  const total = game.faces.length;
+  const remaining = total - game.history.length * 2;
   const pairs = availablePairs(game);
   const locked = paused || busy || complete();
   $('#remaining').textContent = String(remaining);
+  $('.stat-total').textContent = ` / ${total}`;
   $('#pairs').textContent = String(pairs.length);
-  $('#progress').style.width = `${(144 - remaining) / 144 * 100}%`;
+  $('#progress').style.width = `${(total - remaining) / total * 100}%`;
   $('#timer').textContent = formatTime(game.elapsedMs);
   $<HTMLButtonElement>('#undo').disabled = !game.history.length || busy || paused;
   $<HTMLButtonElement>('#redo').disabled = !game.redo.length || locked;
@@ -177,12 +179,12 @@ function render() {
 }
 function selectTile(id: number) {
   if (paused || busy || dialog.open || complete()) return;
-  if (!isFree(id, removedTiles(game))) { status('Эта костяшка закрыта. Сверху должно быть пусто, а слева или справа — свободно.'); return; }
+  if (!isFree(id, removedTiles(game), layoutId(game))) { status('Эта костяшка закрыта. Сверху должно быть пусто, а слева или справа — свободно.'); return; }
   updateClock(); started = true;
   if (selected === id) { selected = null; hint = null; board.updateSelection(selected, hint); return; }
   if (selected !== null && removePair(game, selected, id)) {
     selected = null; hint = null; hintIndex = 0;
-    status(complete() ? 'Все 144 костяшки убраны. Поздравляем!' : 'Пара найдена.');
+    status(complete() ? 'Все костяшки убраны. Поздравляем!' : 'Пара найдена.');
     render(); persist();
     return;
   }
@@ -207,24 +209,26 @@ dialog.addEventListener('click', event => { if (event.target === dialog && event
   if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) closeDialog();
 } });
 
-async function createGame(seed?: number) {
+async function createGame(seed?: number, layout = layoutId(game)) {
   setControlsOpen(false);
   updateClock(); busy = true; paused = false; selected = null; hint = null;
   if (dialog.open) dialog.close();
   if (game) render();
   await new Promise(resolve => setTimeout(resolve, 30));
   try {
-    game = newGame(seed); started = false; hintIndex = 0;
-    status('Новая раздача готова. У каждой партии есть решение.');
+    game = newGame(seed, layout);
+    $<HTMLSelectElement>('#layout').value = layout; started = false; hintIndex = 0;
+    status(`${getLayout(layout).name}: ${game.faces.length} плиток. У партии есть решение.`);
   } catch (error) { status(error instanceof Error ? error.message : 'Не удалось начать игру.'); }
   busy = false; previousTick = performance.now(); render(); persist();
 }
 function requestNewGame() {
   if (busy) return;
-  if (complete() || (!game.history.length && game.elapsedMs === 0)) { void createGame(); return; }
-  showDialog('Начать новую партию?', `<p>Текущая партия будет заменена новой решаемой раздачей.</p><div class="dialog-actions"><button id="cancel-new" class="button secondary">Продолжить текущую</button><button id="confirm-new" class="button primary">Новая игра</button></div>`);
+  const layout = $<HTMLSelectElement>('#layout').value;
+  if (complete() || (!game.history.length && game.elapsedMs === 0)) { void createGame(undefined, layout); return; }
+  showDialog('Начать новую партию?', `<p>Текущая партия будет заменена новой решаемой раздачей: ${getLayout(layout).name}, ${getLayout(layout).slots.length} плиток.</p><div class="dialog-actions"><button id="cancel-new" class="button secondary">Продолжить текущую</button><button id="confirm-new" class="button primary">Новая игра</button></div>`);
   $('#cancel-new').addEventListener('click', closeDialog);
-  $('#confirm-new').addEventListener('click', () => void createGame());
+  $('#confirm-new').addEventListener('click', () => void createGame(undefined, layout));
 }
 function doUndo() {
   if (busy || paused || dialog.open) return;
@@ -293,7 +297,7 @@ $('#board-overlay').addEventListener('click', event => {
 new FullscreenController($('.game-shell'), $<HTMLButtonElement>('#fullscreen'));
 
 $('#rules').addEventListener('click', () => showDialog('Как играть', `
-  <p class="dialog-lead">Уберите с поля все 144 костяшки, находя одинаковые пары.</p>
+  <p class="dialog-lead">Уберите с поля все костяшки, находя одинаковые пары.</p>
   <ol class="rules-list"><li><strong>Найдите свободную костяшку.</strong> Над ней нет другой, а хотя бы одна сторона — левая или правая — открыта.</li><li><strong>Выберите такую же.</strong> Нажмите на обе костяшки, чтобы убрать пару.</li><li><strong>Смотрите на следующие ходы.</strong> Каждая новая раздача имеет решение, но не любой порядок ходов ведёт к победе.</li></ol>
   <div class="tip">${icon('hint')}<p>«Подсказка» выделяет доступную пару. Если пар нет, отмените ход или перемешайте поле.</p></div>
   <p>Все цветы можно соединять с любыми цветами, а времена года — с любыми временами года, даже если рисунки разные.</p>
@@ -341,7 +345,7 @@ async function showScores() {
     const filtered = scores.filter(score => !layout.value || score.layout === layout.value)
       .sort((a, b) => a.elapsedMs - b.elapsedMs || b.date.localeCompare(a.date));
     list.innerHTML = filtered.length ? `<p class="muted">Всего: ${filtered.length}</p><ol class="score-list">${filtered.slice(0, limit).map(score =>
-      `<li><strong>${formatTime(score.elapsedMs)}</strong><span>${escapeHtml(score.layout === 'turtle' ? 'Черепаха' : score.layout)} · ${escapeHtml(new Date(score.date).toLocaleString('ru-RU'))}</span><small>${score.source === 'local' ? `Подсказок: ${score.hints} · Перемешиваний: ${score.shuffles}` : `GNOME${score.player ? ` · ${escapeHtml(score.player)}` : ''}`}</small></li>`).join('')}</ol>`
+      `<li><strong>${formatTime(score.elapsedMs)}</strong><span>${escapeHtml(LAYOUTS.find(l => l.id === score.layout)?.name ?? score.layout)} · ${escapeHtml(new Date(score.date).toLocaleString('ru-RU'))}</span><small>${score.source === 'local' ? `Подсказок: ${score.hints} · Перемешиваний: ${score.shuffles}` : `GNOME${score.player ? ` · ${escapeHtml(score.player)}` : ''}`}</small></li>`).join('')}</ol>`
       : '<p>Пока нет записей. Завершите партию или импортируйте рекорды GNOME.</p>';
     more.hidden = filtered.length <= limit;
   };
@@ -350,7 +354,7 @@ async function showScores() {
     scores = await loadScores();
     const selectedLayout = layout.value;
     layout.innerHTML = '<option value="">Все раскладки</option>' + [...new Set(scores.map(score => score.layout))].sort()
-      .map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name === 'turtle' ? 'Черепаха' : name)}</option>`).join('');
+      .map(name => `<option value="${escapeHtml(name)}">${escapeHtml(LAYOUTS.find(l => l.id === name)?.name ?? name)}</option>`).join('');
     layout.value = selectedLayout;
     draw();
   };
@@ -377,7 +381,7 @@ async function showScores() {
 $('#scores').addEventListener('click', () => void showScores());
 $('#about').addEventListener('click', () => showDialog('Об игре', `
   <p class="dialog-lead">Маджонг-пасьянс.</p>
-  <p>Версия 0.1.0 · Костяшки Postmodern · Раскладка «Черепаха».</p>
+  <p>Версия 0.1.0 · Костяшки Postmodern · Семь раскладок, включая шесть компактных для телефона.</p>
   <p>Раскладка и оригинальные SVG-костяшки Postmodern взяты из <a href="https://github.com/GNOME/gnome-mahjongg" target="_blank" rel="noopener noreferrer">GNOME Mahjongg</a>, © 2004–2025 Mahjongg Contributors, GPL-3.0-or-later. Код приложения, интерфейс и иконка — © 2026 Nephrite contributors.</p>
   <p>Свободное ПО под GPL-3.0-or-later. Вы можете изучать, изменять и распространять игру на условиях лицензии. Без гарантий. Это независимый проект.</p>
   <div class="about-links"><a href="./LICENSE.txt" target="_blank" rel="noopener">Лицензия GPLv3</a>${import.meta.env.PROD ? '<a href="./source.tar.gz" download>Исходники этой версии</a>' : '<span class="muted">Архив исходников появится в production-сборке</span>'}</div>
@@ -435,6 +439,7 @@ async function start() {
     if (saved.game) { game = saved.game; restored = true; }
   } catch { storageError(); }
   if (!restored) game = newGame();
+  $<HTMLSelectElement>('#layout').value = layoutId(game);
   started = game!.elapsedMs > 0 || game!.history.length > 0;
   previousTick = performance.now(); render();
   if (restored) status('Ваша партия восстановлена. Продолжим с того же места.');

@@ -40,3 +40,16 @@ describe('IndexedDB persistence', () => {
     expect(await loadSession()).toEqual(before);
   });
 });
+
+it('restores a compact game and records its win under the correct layout exactly once', async () => {
+  const game = newGame(9, 'terraces-6x8');
+  const path = removalPath(new Set(), random(9), game.layout)!;
+  for (const pair of path.slice(0, 4)) removePair(game, ...pair);
+  await saveSession(game, DEFAULT_SETTINGS);
+  expect((await loadSession()).game).toEqual(game);
+  for (const pair of path.slice(4)) removePair(game, ...pair);
+  const before = (await loadSession()).stats.wins;
+  expect((await saveSession(game, DEFAULT_SETTINGS)).wins).toBe(before + 1);
+  expect((await saveSession(game, DEFAULT_SETTINGS)).wins).toBe(before + 1);
+  expect((await loadScores()).filter(s => s.id === `local:${game.id}`)).toMatchObject([{ layout: 'terraces-6x8' }]);
+});

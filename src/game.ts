@@ -9,6 +9,7 @@ export interface Game {
   version: 1;
   id: string;
   seed: number;
+  layout?: string;
   faces: number[];
   history: Pair[];
   redo: Pair[];
@@ -33,26 +34,53 @@ function turtle(): Slot[] {
   return slots;
 }
 
-export const SLOTS = turtle();
+export interface Layout { id: string; name: string; slots: Slot[] }
+function blocks(rectangles: number[][], hole = false): Slot[] {
+  const slots: Slot[] = [];
+  for (const [left, top, width, height, z] of rectangles) {
+    for (let y = top; y < top + height; y++) for (let x = left; x < left + width; x++) {
+      if (hole && x === 3 && y === 3) continue;
+      slots.push({ id: slots.length, x, y, z });
+    }
+  }
+  return slots;
+}
+// Original compact layouts; coordinates are in tile pitches, before the 3D offset.
+export const LAYOUTS: Layout[] = [
+  { id: 'turtle', name: 'Черепаха', slots: turtle() },
+  { id: 'pyramid-6x8', name: 'Пирамида 6 × 8', slots: blocks([[0,0,6,8,0],[1,1,4,6,1]]) },
+  { id: 'terraces-6x8', name: 'Террасы 6 × 8', slots: blocks([[0,0,6,8,0],[1,1,4,6,1],[2,2,2,4,2]]) },
+  { id: 'twins-6x8', name: 'Две башни 6 × 8', slots: blocks([[0,0,2,8,0],[4,0,2,8,0],[0,1,2,6,1],[4,1,2,6,1],[0,2,2,4,2],[4,2,2,4,2]]) },
+  { id: 'pyramid-7x7', name: 'Пирамида 7 × 7', slots: blocks([[0,0,7,7,0],[1,1,5,5,1],[2,2,3,3,2],[3,3,1,1,3]]) },
+  { id: 'garden-7x7', name: 'Сад 7 × 7', slots: blocks([[0,0,7,7,0],[1,1,5,5,1]], true) },
+  { id: 'islands-7x7', name: 'Острова 7 × 7', slots: blocks([0,4].flatMap(x => [0,4].flatMap(y => [[x,y,3,3,0],[x+.5,y+.5,2,2,1],[x+1,y+1,1,1,2]]))) },
+];
+export const SLOTS = LAYOUTS[0].slots;
+export const layoutId = (game: Game) => game.layout ?? 'turtle';
+export const getLayout = (id = 'turtle'): Layout => {
+  const layout = LAYOUTS.find(layout => layout.id === id);
+  if (!layout) throw new Error('Неизвестная раскладка.');
+  return layout;
+};
 const EPS = 0.001;
 const overlaps = (a: number, b: number) => Math.abs(a - b) < 1 - EPS;
-const blockers = SLOTS.map(a => ({
-  above: SLOTS.filter(b => b.z > a.z && overlaps(a.x, b.x) && overlaps(a.y, b.y)).map(b => b.id),
-  left: SLOTS.filter(b => b.z === a.z && Math.abs(b.x - a.x + 1) < EPS && overlaps(a.y, b.y)).map(b => b.id),
-  right: SLOTS.filter(b => b.z === a.z && Math.abs(b.x - a.x - 1) < EPS && overlaps(a.y, b.y)).map(b => b.id),
-}));
+const blockerMaps = new Map(LAYOUTS.map(layout => [layout.id, layout.slots.map(a => ({
+  above: layout.slots.filter(b => b.z > a.z && overlaps(a.x, b.x) && overlaps(a.y, b.y)).map(b => b.id),
+  left: layout.slots.filter(b => b.z === a.z && Math.abs(b.x - a.x + 1) < EPS && overlaps(a.y, b.y)).map(b => b.id),
+  right: layout.slots.filter(b => b.z === a.z && Math.abs(b.x - a.x - 1) < EPS && overlaps(a.y, b.y)).map(b => b.id),
+}))]));
 
 export function removedTiles(game: Game): Set<number> { return new Set(game.history.flat()); }
-export function isFree(id: number, removed: Set<number>): boolean {
-  const b = blockers[id];
+export function isFree(id: number, removed: Set<number>, layout = 'turtle'): boolean {
+  const b = blockerMaps.get(layout)?.[id];
   return !!b && !removed.has(id) && !b.above.some(i => !removed.has(i)) &&
     (!b.left.some(i => !removed.has(i)) || !b.right.some(i => !removed.has(i)));
 }
-export function freeTiles(removed: Set<number>): number[] {
-  return SLOTS.filter(s => isFree(s.id, removed)).map(s => s.id);
+export function freeTiles(removed: Set<number>, layout = 'turtle'): number[] {
+  return getLayout(layout).slots.filter(s => isFree(s.id, removed, layout)).map(s => s.id);
 }
 export function availablePairs(game: Game): Pair[] {
-  const free = freeTiles(removedTiles(game));
+  const free = freeTiles(removedTiles(game), layoutId(game));
   const pairs: Pair[] = [];
   for (let a = 0; a < free.length; a++) {
     for (let b = a + 1; b < free.length; b++) {
@@ -82,16 +110,17 @@ function shuffled<T>(items: T[], rng: () => number): T[] {
 
 // Find a complete geometric removal sequence, then assign matching faces to its pairs.
 // Backtracking is bounded. A failed search never mutates the player's game.
-export function removalPath(initialRemoved: Set<number>, rng: () => number): Pair[] | null {
+export function removalPath(initialRemoved: Set<number>, rng: () => number, layout = 'turtle'): Pair[] | null {
+  const slots = getLayout(layout).slots;
   const removed = new Set(initialRemoved);
   const failed = new Set<string>();
   let budget = 40000;
   function search(): Pair[] | null {
-    if (removed.size === SLOTS.length) return [];
+    if (removed.size === slots.length) return [];
     if (--budget <= 0) return null;
-    const key = SLOTS.map(s => removed.has(s.id) ? '0' : '1').join('');
+    const key = slots.map(s => removed.has(s.id) ? '0' : '1').join('');
     if (failed.has(key)) return null;
-    const free = shuffled(freeTiles(removed), rng);
+    const free = shuffled(freeTiles(removed, layout), rng);
     for (let a = 0; a < free.length - 1; a++) {
       for (let b = a + 1; b < free.length; b++) {
         const pair: Pair = [free[a], free[b]];
@@ -108,22 +137,23 @@ export function removalPath(initialRemoved: Set<number>, rng: () => number): Pai
   return search();
 }
 
-export function newGame(seed = crypto.getRandomValues(new Uint32Array(1))[0]): Game {
+export function newGame(seed = crypto.getRandomValues(new Uint32Array(1))[0], layout = 'turtle'): Game {
   const rng = random(seed);
-  const path = removalPath(new Set(), rng);
+  const path = removalPath(new Set(), rng, layout);
   if (!path) throw new Error('Не удалось подготовить раскладку. Попробуйте ещё раз.');
-  const facePairs = shuffled(Array.from({ length: 72 }, (_, i) => Math.floor(i / 2)), rng);
-  const faces = Array<number>(144).fill(0);
+  const count = getLayout(layout).slots.length;
+  const facePairs = shuffled(Array.from({ length: count / 2 }, (_, i) => Math.floor(i / 2)), rng);
+  const faces = Array<number>(count).fill(0);
   path.forEach(([a, b], i) => { faces[a] = faces[b] = facePairs[i]; });
   // getRandomValues also works on a plain HTTP LAN preview; randomUUID requires HTTPS.
   const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
-  return { version: 1, id, seed, faces, history: [], redo: [], elapsedMs: 0,
+  return { version: 1, id, seed, layout, faces, history: [], redo: [], elapsedMs: 0,
     hints: 0, shuffles: 0, savedAt: Date.now() };
 }
 
 export function removePair(game: Game, a: number, b: number): boolean {
   const removed = removedTiles(game);
-  if (a === b || !isFree(a, removed) || !isFree(b, removed) || game.faces[a] !== game.faces[b]) return false;
+  if (a === b || !isFree(a, removed, layoutId(game)) || !isFree(b, removed, layoutId(game)) || game.faces[a] !== game.faces[b]) return false;
   game.history.push([a, b]); game.redo = [];
   return true;
 }
@@ -136,17 +166,17 @@ export function redo(game: Game): boolean {
   const pair = game.redo.at(-1);
   if (!pair) return false;
   const removed = removedTiles(game);
-  if (!isFree(pair[0], removed) || !isFree(pair[1], removed) || game.faces[pair[0]] !== game.faces[pair[1]]) return false;
+  if (!isFree(pair[0], removed, layoutId(game)) || !isFree(pair[1], removed, layoutId(game)) || game.faces[pair[0]] !== game.faces[pair[1]]) return false;
   game.redo.pop(); game.history.push(pair); return true;
 }
 export function shuffleRemaining(game: Game, seed = crypto.getRandomValues(new Uint32Array(1))[0]): boolean {
   const rng = random(seed);
   const removed = removedTiles(game);
-  if (removed.size === 144) return false;
-  const path = removalPath(removed, rng);
+  if (removed.size === game.faces.length) return false;
+  const path = removalPath(removed, rng, layoutId(game));
   if (!path) return false;
   const counts = new Map<number, number>();
-  SLOTS.filter(s => !removed.has(s.id)).forEach(s => counts.set(game.faces[s.id], (counts.get(game.faces[s.id]) ?? 0) + 1));
+  getLayout(layoutId(game)).slots.filter(s => !removed.has(s.id)).forEach(s => counts.set(game.faces[s.id], (counts.get(game.faces[s.id]) ?? 0) + 1));
   const facePairs: number[] = [];
   for (const [face, count] of counts) {
     if (count % 2 !== 0) return false;
@@ -162,23 +192,25 @@ export function shuffleRemaining(game: Game, seed = crypto.getRandomValues(new U
 export function isValidGame(value: unknown): value is Game {
   if (!value || typeof value !== 'object') return false;
   const g = value as Game;
+  if (g.layout !== undefined && (typeof g.layout !== 'string' || !LAYOUTS.some(l => l.id === g.layout))) return false;
+  const count = getLayout(layoutId(g)).slots.length;
   const validPair = (p: unknown): p is Pair => Array.isArray(p) && p.length === 2 &&
-    p.every(i => Number.isInteger(i) && i >= 0 && i < 144) && p[0] !== p[1];
+    p.every(i => Number.isInteger(i) && i >= 0 && i < count) && p[0] !== p[1];
   if (g.version !== 1 || typeof g.id !== 'string' || !Number.isInteger(g.seed) ||
-    !Array.isArray(g.faces) || g.faces.length !== 144 || !g.faces.every(f => Number.isInteger(f) && f >= 0 && f < 36) ||
+    !Array.isArray(g.faces) || g.faces.length !== count || !g.faces.every(f => Number.isInteger(f) && f >= 0 && f < 36) ||
     !Array.isArray(g.history) || !g.history.every(validPair) || !Array.isArray(g.redo) || !g.redo.every(validPair) ||
     !Number.isFinite(g.elapsedMs) || g.elapsedMs < 0 || !Number.isInteger(g.hints) || g.hints < 0 ||
     !Number.isInteger(g.shuffles) || g.shuffles < 0 || !Number.isFinite(g.savedAt)) return false;
   const counts = Array<number>(36).fill(0);
   g.faces.forEach(f => counts[f]++);
-  if (counts.some(c => c !== 4)) return false;
+  if (counts.some((c, i) => c !== (i < count / 4 ? 4 : 0))) return false;
   const removed = new Set<number>();
   for (const [a, b] of g.history) {
-    if (!isFree(a, removed) || !isFree(b, removed) || g.faces[a] !== g.faces[b]) return false;
+    if (!isFree(a, removed, layoutId(g)) || !isFree(b, removed, layoutId(g)) || g.faces[a] !== g.faces[b]) return false;
     removed.add(a); removed.add(b);
   }
   for (const [a, b] of [...g.redo].reverse()) {
-    if (!isFree(a, removed) || !isFree(b, removed) || g.faces[a] !== g.faces[b]) return false;
+    if (!isFree(a, removed, layoutId(g)) || !isFree(b, removed, layoutId(g)) || g.faces[a] !== g.faces[b]) return false;
     removed.add(a); removed.add(b);
   }
   return true;

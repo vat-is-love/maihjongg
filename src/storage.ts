@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import { isValidGame, type Game } from './game';
+import { isValidGame, layoutId, type Game } from './game';
 import type { Score } from './scores';
 
 export interface Settings { highlightFree: boolean; reducedMotion: boolean }
@@ -44,12 +44,12 @@ export async function saveSession(game: Game, settings: Settings): Promise<Stats
   const database = await db();
   const tx = database.transaction('state', 'readwrite');
   const stats = (await tx.store.get('stats') as Stats | undefined) ?? structuredClone(DEFAULT_STATS);
-  if (game.history.length === 72 && !stats.completedIds.includes(game.id)) {
+  if (game.history.length * 2 === game.faces.length && !stats.completedIds.includes(game.id)) {
     stats.wins++;
     stats.completedIds.push(game.id);
     stats.bestMs = stats.bestMs === null ? game.elapsedMs : Math.min(stats.bestMs, game.elapsedMs);
     const scores = (await tx.store.get('scores') as Score[] | undefined) ?? [];
-    scores.push({ id: `local:${game.id}`, date: new Date(game.savedAt).toISOString(), layout: 'turtle',
+    scores.push({ id: `local:${game.id}`, date: new Date(game.savedAt).toISOString(), layout: layoutId(game),
       elapsedMs: game.elapsedMs, player: '', source: 'local', hints: game.hints, shuffles: game.shuffles });
     await tx.store.put(scores, 'scores');
   }

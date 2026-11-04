@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { SLOTS, isFree, removedTiles, type Game, type Pair } from './game';
+import { getLayout, layoutId, isFree, removedTiles, type Game, type Pair } from './game';
 import { FACE_NAMES, TILE_HEIGHT, TILE_LAYER_X, TILE_LAYER_Y, TILE_PITCH_X, TILE_PITCH_Y, TILE_WIDTH, tileSprite } from './art';
 
 const WIDTH = 896, HEIGHT = 704;
-const DRAW_ORDER = [...SLOTS].sort((a, b) => a.z - b.z || (a.y - a.x) - (b.y - b.x) || a.x - b.x);
-const DRAW_RANK = new Map(DRAW_ORDER.map((slot, rank) => [slot.id, rank]));
 function setAttribute(element: Element, name: string, value: string) {
   if (element.getAttribute(name) !== value) element.setAttribute(name, value);
 }
 export class Board {
+  private layout = '';
+  private drawOrder: ReturnType<typeof getLayout>['slots'] = [];
+  private drawRank = new Map<number, number>();
   private svg: SVGSVGElement;
   private tiles: SVGGElement;
   private tileElements = new Map<number, SVGSVGElement>();
@@ -40,6 +41,16 @@ export class Board {
   }
 
   render(game: Game, selected: number | null, hint: Pair | null, highlight: boolean): void {
+    const layout = layoutId(game);
+    if (this.layout !== layout) {
+      this.layout = layout;
+      this.tiles.replaceChildren(); this.tileElements.clear(); this.loadingImages.clear();
+      this.drawOrder = [...getLayout(layout).slots].sort((a, b) => a.z - b.z || (a.y - a.x) - (b.y - b.x) || a.x - b.x);
+      this.drawRank = new Map(this.drawOrder.map((slot, rank) => [slot.id, rank]));
+      const xs = this.drawOrder.map(s => 24 + s.x * TILE_PITCH_X + s.z * TILE_LAYER_X);
+      const ys = this.drawOrder.map(s => 24 + s.y * TILE_PITCH_Y - s.z * TILE_LAYER_Y);
+      this.svg.setAttribute('viewBox', `${Math.min(...xs)-16} ${Math.min(...ys)-16} ${Math.max(...xs)-Math.min(...xs)+TILE_WIDTH+32} ${Math.max(...ys)-Math.min(...ys)+TILE_HEIGHT+32}`);
+    }
     const removed = removedTiles(game);
     const counts = new Map<number, number>();
     const variants = game.faces.map(face => {
@@ -47,10 +58,10 @@ export class Board {
       counts.set(face, variant + 1);
       return variant;
     });
-    for (const s of DRAW_ORDER) {
+    for (const s of this.drawOrder) {
       let tile = this.tileElements.get(s.id);
       if (removed.has(s.id)) { tile?.remove(); this.tileElements.delete(s.id); continue; }
-      const free = isFree(s.id, removed);
+      const free = isFree(s.id, removed, layout);
       if (!tile) {
         tile = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         tile.dataset.tile = String(s.id);
@@ -63,7 +74,7 @@ export class Board {
         tile.setAttribute('role', 'button');
         // Restore removed tiles in the same stacking order when undoing.
         const next = [...this.tiles.children].find(other =>
-          DRAW_RANK.get(Number((other as SVGSVGElement).dataset.tile))! > DRAW_RANK.get(s.id)!);
+          this.drawRank.get(Number((other as SVGSVGElement).dataset.tile))! > this.drawRank.get(s.id)!);
         this.tiles.insertBefore(tile, next ?? null);
         this.tileElements.set(s.id, tile);
       }

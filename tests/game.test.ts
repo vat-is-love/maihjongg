@@ -83,3 +83,40 @@ describe('Turtle rules', () => {
     expect(isValidGame(null)).toBe(false);
   });
 });
+
+// Each compact layout must have a legal complete path, including after shuffling.
+describe('Compact layouts', () => {
+  it('fits the advertised footprint and generates reproducible solvable deals', async () => {
+    const { LAYOUTS } = await import('../src/game');
+    for (const layout of LAYOUTS.slice(1)) {
+      const width = layout.id.endsWith('6x8') ? 6 : 7;
+      const height = layout.id.endsWith('6x8') ? 8 : 7;
+      expect(Math.max(...layout.slots.map(s => s.x)) + 1).toBe(width);
+      expect(Math.max(...layout.slots.map(s => s.y)) + 1).toBe(height);
+      expect(new Set(layout.slots.map(s => `${s.x},${s.y},${s.z}`)).size).toBe(layout.slots.length);
+      for (let seed = 0; seed < 30; seed++) {
+        const game = newGame(seed, layout.id);
+        expect(newGame(seed, layout.id).faces).toEqual(game.faces);
+        expect(isValidGame(game)).toBe(true);
+        const path = removalPath(new Set(), random(seed), layout.id)!;
+        expect(path).toHaveLength(layout.slots.length / 2);
+        for (const pair of path.slice(0, 5)) expect(removePair(game, ...pair)).toBe(true);
+        undo(game); expect(isValidGame(game)).toBe(true); redo(game);
+        const continuation = removalPath(removedTiles(game), random(77), layout.id)!;
+        expect(shuffleRemaining(game, 77)).toBe(true);
+        expect(isValidGame(game)).toBe(true);
+        for (const pair of continuation) expect(removePair(game, ...pair)).toBe(true);
+        expect(removedTiles(game).size).toBe(layout.slots.length);
+        expect(isValidGame(game)).toBe(true);
+        expect(shuffleRemaining(game)).toBe(false);
+      }
+    }
+  }, 20000);
+  it('restores legacy Turtle saves and rejects unknown or mismatched layouts', () => {
+    const legacy = newGame(42);
+    delete legacy.layout;
+    expect(isValidGame(legacy)).toBe(true);
+    expect(isValidGame({ ...legacy, layout: 'unknown' })).toBe(false);
+    expect(isValidGame({ ...legacy, layout: 'garden-7x7' })).toBe(false);
+  });
+});
