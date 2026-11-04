@@ -206,7 +206,7 @@ it('starts a random compact field when mobile mode is selected', async () => {
   const { saveSession } = await import('../src/storage');
   expect(saveSession).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ mobileMode: true }));
 });
-it('restores mobile mode and advances automatically after a win without repeating the layout', async () => {
+it('keeps a mobile victory until the next layout is requested without repeating the layout', async () => {
   session.mobileMode = true;
   const game = newGame(13, 'islands-7x7');
   const path = removalPath(new Set(), random(13), game.layout)!;
@@ -215,16 +215,18 @@ it('restores mobile mode and advances automatically after a win without repeatin
   expect(document.querySelector<HTMLSelectElement>('#layout')!.value).toBe('mobile-random');
   play(path.at(-1)!);
   expect(document.querySelector('.victory')).not.toBeNull();
-  await vi.advanceTimersByTimeAsync(2999);
+  await vi.advanceTimersByTimeAsync(10000);
   expect(document.querySelector('.victory')).not.toBeNull();
-  await vi.advanceTimersByTimeAsync(50);
+  expect(document.querySelector('#remaining')!.textContent).toBe('0');
+  click('#play-again');
+  await vi.advanceTimersByTimeAsync(40);
   expect(document.querySelector('.victory')).toBeNull();
   const { saveSession } = await import('../src/storage');
   const savedGame = vi.mocked(saveSession).mock.calls.at(-1)![0];
   expect(savedGame.layout).not.toBe(game.layout);
   expect(MOBILE_LAYOUTS.some(layout => layout.id === savedGame.layout)).toBe(true);
 });
-it('cancels automatic advance when a winning move is undone', async () => {
+it('allows undoing a winning move in mobile mode', async () => {
   session.mobileMode = true;
   const game = newGame(13, 'islands-7x7');
   const path = removalPath(new Set(), random(13), game.layout)!;
