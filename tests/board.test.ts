@@ -149,3 +149,28 @@ it('rebuilds geometry when changing layouts and fits every tile inside the viewB
     }
   }
 });
+
+it('switches artwork without changing tile positions, selection, crops or game state', () => {
+  const game = newGame(42);
+  const snapshot = structuredClone(game);
+  const pair = availablePairs(game)[0];
+  board.render(game, pair[0], pair, true);
+  const tiles = [...host.querySelectorAll('.tile')];
+  const geometry = () => tiles.map(tile => ['x', 'y', 'width', 'height', 'viewBox'].map(attr => tile.getAttribute(attr)));
+  const before = geometry();
+  const crops = () => [...host.querySelectorAll('.tile-sprite')].map(sprite => sprite.getAttribute('viewBox'));
+  const originalCrops = crops();
+  board.render(game, pair[0], pair, true, 'nephrite');
+  expect([...host.querySelectorAll('.tile')]).toEqual(tiles);
+  expect(geometry()).toEqual(before);
+  expect(crops()).toEqual(originalCrops);
+  expect(host.querySelector('.selected')!.getAttribute('data-tile')).toBe(String(pair[0]));
+  expect(host.querySelectorAll('.hinted')).toHaveLength(2);
+  expect(new Set([...host.querySelectorAll('image')].map(image => image.getAttribute('href')))).toEqual(new Set(['/themes/nephrite.webp']));
+  expect(host.getAttribute('aria-busy')).toBe('true');
+  for (const image of host.querySelectorAll('image')) image.dispatchEvent(new Event('load'));
+  expect(host.getAttribute('aria-busy')).toBe('false');
+  expect(game).toEqual(snapshot);
+  board.render(game, null, null, false, 'postmodern');
+  expect(host.querySelector('image')!.getAttribute('href')).toBe('/themes/postmodern.webp');
+});

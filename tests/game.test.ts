@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { describe, expect, it } from 'vitest';
-import { SLOTS, LAYOUTS, MOBILE_LAYOUTS, nextMobileLayout, availablePairs, freeTiles, isFree, isValidGame, newGame, random, redo, removalPath, removePair, removedTiles, shuffleRemaining, undo } from '../src/game';
+import { createHash } from 'node:crypto';
+import savedTurtle from './fixtures/turtle-save-v1.json';
+import { SLOTS, LAYOUTS, MOBILE_LAYOUTS, nextMobileLayout, availablePairs, freeTiles, isFree, isValidGame, newGame, random, redo, removalPath, removePair, removedTiles, shuffleRemaining, undo, type Game } from '../src/game';
 
 describe('Turtle rules', () => {
   it('has 144 unique slots, five layers and valid half-offset blockers', () => {
@@ -122,28 +124,31 @@ describe('Compact layouts', () => {
 });
 
 
-describe('Desktop GNOME layouts', () => {
-  it('has 144 unique positions per map and generates playable complete solutions', () => {
-    const desktop = LAYOUTS.filter(layout => layout.id !== 'turtle' && !MOBILE_LAYOUTS.includes(layout));
-    expect(desktop).toHaveLength(9);
-    for (const layout of desktop) {
-      expect(layout.slots).toHaveLength(144);
-      expect(new Set(layout.slots.map(s => `${s.x},${s.y},${s.z}`)).size).toBe(144);
-      for (let seed = 0; seed < 20; seed++) {
-        const game = newGame(seed, layout.id);
-        expect(isValidGame(game)).toBe(true);
-        const path = removalPath(new Set(), random(seed), layout.id)!;
-        expect(path).toHaveLength(72);
-        for (const pair of path) expect(removePair(game, ...pair), `${layout.id}, seed ${seed}`).toBe(true);
-      }
-    }
-  }, 20000);
-});
 it('chooses only compact mobile layouts and never repeats the previous field', () => {
   expect(MOBILE_LAYOUTS).toHaveLength(6);
   for (const previous of LAYOUTS) for (let seed = 0; seed < 30; seed++) {
     const next = nextMobileLayout(previous.id, random(seed));
     expect(MOBILE_LAYOUTS.some(layout => layout.id === next)).toBe(true);
     expect(next).not.toBe(previous.id);
+  }
+});
+
+it('preserves Turtle positions, IDs, seeded deals and existing saves after the MIT replacement', () => {
+  const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  expect(hash(SLOTS)).toBe('f8274e63f4948ac4fcb483343998be8079f547cc46c55c5ba132c5482783f4ca');
+  expect(hash(newGame(42).faces)).toBe('2948995e3b3a4a6d354fa59bf75e7076b31abe4e605c8bc596b8db640f1b1158');
+  const game = structuredClone(savedTurtle) as Game;
+  expect(isValidGame(game)).toBe(true);
+  expect(redo(game)).toBe(true);
+  expect(isValidGame(game)).toBe(true);
+  expect(undo(game)).toBe(true);
+  expect(game).toEqual(savedTurtle);
+});
+it('offers only Turtle and the six original compact layouts', () => {
+  expect(LAYOUTS.map(layout => layout.id)).toEqual([
+    'turtle', 'pyramid-6x8', 'terraces-6x8', 'twins-6x8', 'pyramid-7x7', 'garden-7x7', 'islands-7x7',
+  ]);
+  for (const layout of ['ziggurat', 'bridges', 'cloud', 'tictactoe', 'dragon', 'overpass', 'pyramid', 'confounding', 'difficult']) {
+    expect(isValidGame({ ...savedTurtle, layout })).toBe(false);
   }
 });

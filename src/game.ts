@@ -1,9 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Nephrite contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Turtle coordinates adapted from GNOME Mahjongg, data/maps/mahjongg.map.
-// SPDX-FileCopyrightText: 2004-2025 Mahjongg Contributors
 
-import { GNOME_LAYOUTS } from './gnome-layouts';
+import { turtleSlots } from './turtle';
 
 export interface Slot { id: number; x: number; y: number; z: number }
 export type Pair = [number, number];
@@ -21,21 +19,6 @@ export interface Game {
   savedAt: number;
 }
 
-function turtle(): Slot[] {
-  const slots: Slot[] = [];
-  const add = (x: number, y: number, z: number) => slots.push({ id: slots.length, x, y, z });
-  const rows = [[1, 12], [3, 10], [2, 11], [1, 12], [1, 12], [2, 11], [3, 10], [1, 12]];
-  rows.forEach(([left, right], y) => { for (let x = left; x <= right; x++) add(x, y, 0); });
-  add(0, 3.5, 0); add(13, 3.5, 0); add(14, 3.5, 0);
-  for (let z = 1; z <= 3; z++) {
-    for (let y = z; y <= 7 - z; y++) {
-      for (let x = z + 3; x <= 10 - z; x++) add(x, y, z);
-    }
-  }
-  add(6.5, 3.5, 4);
-  return slots;
-}
-
 export interface Layout { id: string; name: string; slots: Slot[] }
 function blocks(rectangles: number[][], hole = false): Slot[] {
   const slots: Slot[] = [];
@@ -49,7 +32,7 @@ function blocks(rectangles: number[][], hole = false): Slot[] {
 }
 // Original compact layouts; coordinates are in tile pitches, before the 3D offset.
 export const LAYOUTS: Layout[] = [
-  { id: 'turtle', name: 'Черепаха', slots: turtle() },
+  { id: 'turtle', name: 'Черепаха', slots: turtleSlots() },
   { id: 'pyramid-6x8', name: 'Пирамида 6 × 8', slots: blocks([[0,0,6,8,0],[1,1,4,6,1]]) },
   { id: 'terraces-6x8', name: 'Террасы 6 × 8', slots: blocks([[0,0,6,8,0],[1,1,4,6,1],[2,2,2,4,2]]) },
   { id: 'twins-6x8', name: 'Две башни 6 × 8', slots: blocks([[0,0,2,8,0],[4,0,2,8,0],[0,1,2,6,1],[4,1,2,6,1],[0,2,2,4,2],[4,2,2,4,2]]) },
@@ -57,9 +40,6 @@ export const LAYOUTS: Layout[] = [
   { id: 'garden-7x7', name: 'Сад 7 × 7', slots: blocks([[0,0,7,7,0],[1,1,5,5,1]], true) },
   { id: 'islands-7x7', name: 'Острова 7 × 7', slots: blocks([0,4].flatMap(x => [0,4].flatMap(y => [[x,y,3,3,0],[x+.5,y+.5,2,2,1],[x+1,y+1,1,1,2]]))) },
 ];
-LAYOUTS.push(...GNOME_LAYOUTS.map(layout => ({ id: layout.id, name: layout.name,
-  slots: layout.coordinates.map(([x, y, z], id) => ({ id, x, y, z })),
-})));
 export const isMobileLayout = (layout: Layout) =>
   Math.max(...layout.slots.map(s => s.x)) - Math.min(...layout.slots.map(s => s.x)) + 1 <= 7 &&
   Math.max(...layout.slots.map(s => s.y)) - Math.min(...layout.slots.map(s => s.y)) + 1 <= 8;

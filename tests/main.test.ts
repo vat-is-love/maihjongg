@@ -4,13 +4,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LAYOUTS, MOBILE_LAYOUTS, random, removalPath, availablePairs, newGame, removePair, type Game, type Pair } from '../src/game';
 import { DEFAULT_SETTINGS, DEFAULT_STATS } from '../src/storage';
 
-const session = vi.hoisted(() => ({ game: null as Game | null, mobileMode: false }));
+const session = vi.hoisted(() => ({ game: null as Game | null, mobileMode: false, language: 'ru' as 'ru' | 'en' | null }));
 vi.mock('../src/storage', async importOriginal => ({
   ...await importOriginal<typeof import('../src/storage')>(),
-  loadSession: vi.fn(async () => ({ game: session.game, settings: { ...DEFAULT_SETTINGS, mobileMode: session.mobileMode }, stats: DEFAULT_STATS, corrupt: false })),
+  loadSession: vi.fn(async () => ({ game: session.game, settings: { ...DEFAULT_SETTINGS, mobileMode: session.mobileMode, language: session.language }, stats: DEFAULT_STATS, corrupt: false })),
   saveSession: vi.fn(async () => DEFAULT_STATS),
 }));
-vi.mock('../src/fullscreen', () => ({ FullscreenController: class {} }));
+vi.mock('../src/fullscreen', () => ({ FullscreenController: class { refreshLabels() {} } }));
 
 function deadEnd() {
   const game = newGame(42);
@@ -32,7 +32,7 @@ function play(pair: Pair) {
   for (const image of document.querySelectorAll('#board image')) image.dispatchEvent(new Event('load'));
   for (const id of pair) document.querySelector(`[data-tile="${id}"]`)!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
 }
-beforeEach(() => { vi.resetModules(); session.mobileMode = false; document.body.innerHTML = '<div id="app"></div>'; vi.useFakeTimers(); });
+beforeEach(() => { vi.resetModules(); session.mobileMode = false; session.language = 'ru'; document.body.innerHTML = '<div id="app"></div>'; vi.useFakeTimers(); });
 afterEach(async () => { await vi.advanceTimersByTimeAsync(0); vi.clearAllTimers(); vi.restoreAllMocks(); vi.useRealTimers(); document.body.innerHTML = ''; });
 
 it('offers three actions for a restored dead end and highlights the new game button', async () => {
@@ -265,4 +265,79 @@ it('keeps the current position and unlocks controls after a worker failure while
   expect(document.querySelector('dialog')!.open).toBe(true);
   expect(document.querySelector('#dialog-content')!.textContent).toContain('Сбой расчёта');
   expect(document.querySelector<HTMLButtonElement>('#shuffle')!.disabled).toBe(false);
+});
+
+it('changes the tile theme immediately from settings and saves the preference', async () => {
+  const game = newGame(42);
+  await start(game); click('#settings');
+  const snapshot = structuredClone(game);
+  const select = document.querySelector<HTMLSelectElement>('#tile-theme')!;
+  expect(select.value).toBe('postmodern');
+  select.value = 'nephrite'; select.dispatchEvent(new Event('change'));
+  expect(document.querySelector('#board image')!.getAttribute('href')).toBe('/themes/nephrite.webp');
+  await vi.advanceTimersByTimeAsync(0);
+  const { saveSession } = await import('../src/storage');
+  expect(saveSession).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ theme: 'nephrite' }));
+  expect(game.faces).toEqual(snapshot.faces);
+  expect(game.history).toEqual(snapshot.history);
+  expect(game.seed).toBe(snapshot.seed);
+  click('#close-dialog'); click('#settings');
+  expect(document.querySelector<HTMLSelectElement>('#tile-theme')!.value).toBe('nephrite');
+});
+
+it.each(['ru', 'en'] as const)('requires an explicit initial language choice and saves %s', async language => {
+  session.language = null;
+  const game = newGame(42);
+  removePair(game, ...availablePairs(game)[0]);
+  game.elapsedMs = 6000;
+  const before = structuredClone(game);
+  await start(game);
+  const picker = document.querySelector<HTMLDialogElement>('#language-dialog')!;
+  expect(picker.open).toBe(true);
+  expect(picker.dispatchEvent(new Event('cancel', { cancelable: true }))).toBe(false);
+  expect(picker.open).toBe(true);
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(game.elapsedMs).toBe(before.elapsedMs);
+  play(availablePairs(game)[0]);
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true }));
+  expect(game.history).toEqual(before.history);
+  click(`[data-language="${language}"]`);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(document.querySelector('#language-dialog')).toBeNull();
+  expect(document.documentElement.lang).toBe(language);
+  expect(document.querySelector('#settings')!.textContent?.trim()).toBe(language === 'en' ? 'Settings' : 'Настройки');
+  expect(game).toEqual(expect.objectContaining({ faces: before.faces, history: before.history, elapsedMs: before.elapsedMs }));
+  const { saveSession } = await import('../src/storage');
+  expect(saveSession).toHaveBeenLastCalledWith(game, expect.objectContaining({ language }));
+});
+
+it('restores English and switches both ways without changing the game', async () => {
+  session.language = 'en';
+  const game = newGame(42);
+  await start(game);
+  expect(document.querySelector('#language-dialog')).toBeNull();
+  expect(document.title).toBe('Mahjongg');
+  expect(document.querySelector('#layout option[value="turtle"]')!.textContent).toBe('Turtle · 144 tiles');
+  expect(document.querySelector('.tile')!.getAttribute('aria-label')).not.toMatch(/[А-Яа-яЁё]/);
+  play(availablePairs(game)[0]);
+  const before = structuredClone(game);
+  for (const language of ['ru', 'en']) {
+    click('#settings');
+    const select = document.querySelector<HTMLSelectElement>('#language')!;
+    select.value = language; select.dispatchEvent(new Event('change'));
+    expect(document.querySelector('#dialog-title')!.textContent).toBe(language === 'en' ? 'Settings' : 'Настройки');
+    expect(document.querySelector('#language')).toBe(document.activeElement);
+    click('#close-dialog');
+    expect(game.faces).toEqual(before.faces);
+    expect(game.history).toEqual(before.history);
+    expect(document.documentElement.lang).toBe(language);
+  }
+  for (const button of ['#rules', '#scores', '#about']) {
+    click(button);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(document.querySelector('#dialog')!.textContent).not.toMatch(/[А-Яа-яЁё]/);
+    click('#close-dialog');
+  }
+  click('#pause');
+  expect(document.querySelector('#board-overlay')!.textContent).toContain('Resume');
 });

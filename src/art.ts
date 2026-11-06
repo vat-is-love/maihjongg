@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Nephrite contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Tile artwork: Postmodern from GNOME Mahjongg, © 2004–2025 Mahjongg Contributors, GPL-3.0-or-later.
+// Tile artwork: Postmodern © 2004–2025 Mahjongg Contributors (GPL-3.0-or-later);
+// Nephrite © 2026 Nephrite contributors (MIT), see public/licenses/nephrite-theme-LICENSE.txt.
 // App icons below: © 2026 Nephrite contributors.
 export const FACE_NAMES = [
   ...Array.from({ length: 9 }, (_, i) => `Круги: ${i + 1}`),
@@ -26,11 +27,19 @@ const FACE_COLUMNS = [
 export function tileColumn(face: number, variant = 0): number {
   return FACE_COLUMNS[face] + (face >= 34 ? variant % 4 : 0);
 }
-export function tileSprite(face: number, variant: number): string {
+export const TILE_THEMES = [
+  { id: 'postmodern', name: 'Классическая' },
+  { id: 'nephrite', name: 'Нефритовая' },
+] as const;
+export type TileTheme = typeof TILE_THEMES[number]['id'];
+export function isTileTheme(value: unknown): value is TileTheme {
+  return TILE_THEMES.some(theme => theme.id === value);
+}
+export function tileSprite(face: number, variant: number, theme: TileTheme = 'postmodern'): string {
   const x = tileColumn(face, variant) * TILE_WIDTH;
   // Lossless 2× raster atlas, displayed in the original logical coordinates.
   // All crops share one decoded bitmap; Board reveals them together.
-  return [false, true].map(highlighted => `<svg class="tile-sprite ${highlighted ? 'tile-sprite-highlight' : 'tile-sprite-normal'}" viewBox="${x} ${highlighted ? TILE_HEIGHT : 0} ${TILE_WIDTH} ${TILE_HEIGHT}" width="${TILE_WIDTH}" height="${TILE_HEIGHT}" overflow="hidden" pointer-events="none"><image href="${import.meta.env.BASE_URL}themes/postmodern.webp" width="2752" height="176"/></svg>`).join('');
+  return [false, true].map(highlighted => `<svg class="tile-sprite ${highlighted ? 'tile-sprite-highlight' : 'tile-sprite-normal'}" viewBox="${x} ${highlighted ? TILE_HEIGHT : 0} ${TILE_WIDTH} ${TILE_HEIGHT}" width="${TILE_WIDTH}" height="${TILE_HEIGHT}" overflow="hidden" pointer-events="none"><image href="${import.meta.env.BASE_URL}themes/${theme}.webp" width="2752" height="176"/></svg>`).join('');
 }
 export function icon(name: string, size = 22): string {
   const paths: Record<string, string> = {

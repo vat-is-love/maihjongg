@@ -77,3 +77,32 @@ it('restores simplified graphics and defaults old preferences to full graphics',
   expect(loaded.settings).toMatchObject({ highlightFree: true, simpleEffects: false });
   database.close();
 });
+
+it('persists tile themes and falls back for old or unknown preferences', async () => {
+  await saveSession(newGame(42), { ...DEFAULT_SETTINGS, theme: 'nephrite' });
+  expect((await loadSession()).settings.theme).toBe('nephrite');
+  const { openDB } = await import('idb');
+  const database = await openDB('nephrite-mahjongg', 1);
+  for (const theme of [undefined, 'unknown', '<script>']) {
+    await database.put('state', { ...DEFAULT_SETTINGS, theme } as never, 'settings');
+    expect((await loadSession()).settings.theme).toBe('postmodern');
+  }
+  database.close();
+});
+
+it('persists both languages and requires a choice for missing or invalid saved languages', async () => {
+  const game = newGame(42);
+  for (const language of ['ru', 'en'] as const) {
+    await saveSession(game, { ...DEFAULT_SETTINGS, language });
+    expect((await loadSession()).settings.language).toBe(language);
+  }
+  const { openDB } = await import('idb');
+  const database = await openDB('nephrite-mahjongg', 1);
+  for (const language of [undefined, null, 'fr', {}, 1]) {
+    await database.put('state', { ...DEFAULT_SETTINGS, language } as never, 'settings');
+    const restored = await loadSession();
+    expect(restored.settings.language).toBeNull();
+    expect(restored.game).toEqual(game);
+  }
+  database.close();
+});

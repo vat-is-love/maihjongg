@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { t } from './i18n';
 import { icon } from './art';
 
 // Expand immediately; if native fullscreen is unavailable/denied the same controls
@@ -29,11 +30,14 @@ export class FullscreenController {
     this.expanded = value;
     this.shell.classList.toggle('is-expanded', value);
     document.body.classList.toggle('game-expanded', value);
-    const label = value ? 'Выйти из полноэкранного режима' : 'На весь экран';
-    this.button.title = label;
-    this.button.setAttribute('aria-label', label);
+    this.refreshLabels();
     this.button.setAttribute('aria-pressed', String(value));
     this.button.innerHTML = icon(value ? 'collapse' : 'fullscreen', 17);
+  }
+  refreshLabels() {
+    const label = this.expanded ? t("Выйти из полноэкранного режима") : t("На весь экран");
+    this.button.title = label;
+    this.button.setAttribute('aria-label', label);
   }
   async toggle(): Promise<void> {
     if (this.pending) return;

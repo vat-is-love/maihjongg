@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { t } from './i18n';
 import { getLayout, layoutId, isFree, removedTiles, type Game, type Pair } from './game';
-import { FACE_NAMES, TILE_HEIGHT, TILE_LAYER_X, TILE_LAYER_Y, TILE_PITCH_X, TILE_PITCH_Y, TILE_WIDTH, tileSprite } from './art';
+import { FACE_NAMES, TILE_HEIGHT, TILE_LAYER_X, TILE_LAYER_Y, TILE_PITCH_X, TILE_PITCH_Y, TILE_WIDTH, tileSprite, type TileTheme } from './art';
 
 const WIDTH = 896, HEIGHT = 704;
 function setAttribute(element: Element, name: string, value: string) {
@@ -20,7 +21,7 @@ export class Board {
   private moved = false;
   private pressedTile: number | null = null;
   constructor(private host: HTMLElement, private onSelect: (id: number) => void) {
-    host.innerHTML = `<svg class="board-svg" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="group" aria-label="Игровое поле. Выбирайте пары свободных одинаковых костяшек."><g class="camera"><g class="tiles"></g></g></svg>`;
+    host.innerHTML = `<svg class="board-svg" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="group" aria-label="${t('Игровое поле. Выбирайте пары свободных одинаковых костяшек.')}"><g class="camera"><g class="tiles"></g></g></svg>`;
     this.svg = host.querySelector('svg')!;
     this.tiles = host.querySelector('.tiles')!;
     host.addEventListener('pointerdown', this.pointerDown);
@@ -40,7 +41,8 @@ export class Board {
     });
   }
 
-  render(game: Game, selected: number | null, hint: Pair | null, highlight: boolean): void {
+  render(game: Game, selected: number | null, hint: Pair | null, highlight: boolean, theme: TileTheme = 'postmodern'): void {
+    setAttribute(this.svg, 'aria-label', t('Игровое поле. Выбирайте пары свободных одинаковых костяшек.'));
     const layout = layoutId(game);
     if (this.layout !== layout) {
       this.layout = layout;
@@ -78,10 +80,10 @@ export class Board {
         this.tiles.insertBefore(tile, next ?? null);
         this.tileElements.set(s.id, tile);
       }
-      const spriteKey = `${game.faces[s.id]}:${variants[s.id]}`;
+      const spriteKey = `${game.faces[s.id]}:${variants[s.id]}:${theme}`;
       if (tile.dataset.sprite !== spriteKey) {
-        tile.innerHTML = `<title>${FACE_NAMES[game.faces[s.id]]}</title>
-          ${tileSprite(game.faces[s.id], variants[s.id])}
+        tile.innerHTML = `<title>${t(FACE_NAMES[game.faces[s.id]])}</title>
+          ${tileSprite(game.faces[s.id], variants[s.id], theme)}
           <polygon class="tile-hitbox" points="9,0 ${TILE_WIDTH},0 ${TILE_WIDTH},79 55,${TILE_HEIGHT} 0,${TILE_HEIGHT} 0,9" fill="transparent" pointer-events="all"/>
           <path class="tile-outline" d="M10 1H62V78H10Z"/>`;
         for (const image of tile.querySelectorAll<SVGImageElement>('image')) {
@@ -92,12 +94,15 @@ export class Board {
         }
         tile.dataset.sprite = spriteKey;
       }
+      const title = tile.querySelector('title')!;
+      const name = t(FACE_NAMES[game.faces[s.id]]);
+      if (title.textContent !== name) title.textContent = name;
       setAttribute(tile, 'class', ['tile', free ? 'free' : 'blocked', selected === s.id ? 'selected' : '',
         hint?.includes(s.id) ? 'hinted' : '', highlight && !free ? 'dimmed' : ''].filter(Boolean).join(' '));
       setAttribute(tile, 'tabindex', free ? '0' : '-1');
       setAttribute(tile, 'aria-disabled', String(!free));
       setAttribute(tile, 'aria-pressed', String(selected === s.id));
-      setAttribute(tile, 'aria-label', `${FACE_NAMES[game.faces[s.id]]}${free ? ', свободна' : ', закрыта'}`);
+      setAttribute(tile, 'aria-label', `${t(FACE_NAMES[game.faces[s.id]])}${free ? t(', свободна') : t(', закрыта')}`);
     }
     this.selected = selected;
     this.hint = hint ? [...hint] : null;

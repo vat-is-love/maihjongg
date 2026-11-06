@@ -92,3 +92,13 @@ main{padding-top:28px;padding-bottom:24px}
 
 /* Keep opacity and outlines for locked/selected tiles; skip costly effects. */
 .simple-effects *,.simple-effects *::before,.simple-effects *::after,.simple-effects dialog::backdrop{filter:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;box-shadow:none!important;text-shadow:none!important}
+
+/* Tile theme selector follows the settings controls on narrow screens. */
+.settings-row select{font:inherit;font-size:13px;max-width:52%;min-height:42px;padding:8px 28px 8px 10px;border:1px solid #cdd7c1;border-radius:8px;background:#f1f3e9;color:#305b45}.settings-row select:focus-visible{outline:3px solid #c18b34;outline-offset:4px}
+
+#language-dialog::backdrop{background:#08271fbb;backdrop-filter:blur(5px)}
+#language-dialog{text-align:center;max-width:420px}
+#language-title{font-family:Georgia,serif;font-weight:400;font-size:27px;line-height:1.5;margin:0 0 24px}
+.language-options{display:flex;gap:14px;flex-wrap:wrap}
+.language-options .button{flex:1;min-width:130px;font-size:16px}
+.settings-row select{max-width:52%;min-height:38px}
